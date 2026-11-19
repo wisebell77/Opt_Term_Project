@@ -7,6 +7,7 @@
   receptor_random=True이면 Diana et al.(2015)처럼 수락 검사가 없는 무작위 이동을 쓴다.
 - 재선택은 중복 제거나 무작위 섞기 없이 목적함수 오름차순(안정 정렬)으로 진행한다.
 - 우선도는 개선된 해에서 100이 되고, 개선되지 않은 세대마다 D_PRIOR만큼 낮아진다(논문은 세부를 적지 않음).
+- 시간 제한은 세대가 끝날 때마다 확인한다. 한 세대는 도중에 끊기지 않는다(논문의 Algorithm 5).
 논문에 없는 본 프로젝트의 규칙은 src/README.md에 정리되어 있다.
 """
 from __future__ import annotations
@@ -293,9 +294,7 @@ def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False):
     while best.total > 0 and not budget.done():
         parents = cells + rng.choices(cells, weights=fitness(cells), k=NC - len(cells))
         clones = []
-        for parent in parents:
-            if budget.done():
-                break
+        for parent in parents:  # 시간 제한은 세대마다 한 번 확인한다(논문의 Algorithm 5의 while 조건)
             clone = parent.sched.copy()
             receptor_editing(inst, clone, rng, receptor_random)
             vnd(inst, clone, rng)
