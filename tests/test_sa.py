@@ -6,7 +6,7 @@ import pytest
 from src.budget import Budget
 from src.csa import grasp
 from src.h5 import h5
-from src.instance import list_instances, load_instance
+from src.instance import Instance, list_instances, load_instance
 from src.sa import fit_temperature, propose, sa_t, temperatures
 from src.schedule import validate
 from tests.helpers import hard_instance, hard_instances
@@ -74,7 +74,9 @@ def test_incremental_cost_matches_full_recalculation_over_1000_random_moves():
 
 
 def test_all_three_move_kinds_are_generated():
-    inst = hard_instance(6)
+    base = hard_instance(6)
+    # 외부 교환이 가능하도록 모든 작업이 모든 기계에 적격인 인스턴스를 쓴다
+    inst = Instance(base.name, base.n, base.m, base.p, base.s, base.d, [[True] * base.n for _ in range(base.m)])
     sched, rng = h5(inst), random.Random(2)
     where = [i for j in range(inst.n) for i, seq in enumerate(sched.seqs) if j in seq]
     kinds = {propose(inst, sched, where, rng)[0] for _ in range(300)}

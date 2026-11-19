@@ -1,6 +1,8 @@
 """삽입 연산 BestPosition과 BestPosition_Total.
 
-동점 처리: 지연 합이 같으면 완료시간 합이 작은 쪽, 그래도 같으면 기계 번호와 위치가 작은 쪽을 고른다.
+동점 처리(논문 5.2절): 기계의 지연이 삽입 전에도 0이고 삽입 후에도 0이면 Σ(C_j - d_j)가 최소인 위치
+(= 완료시간 합이 최소인 위치)를 고른다. 그 밖의 동점은 논문이 정하지 않았으므로 위치가 앞선 쪽,
+기계 사이의 동점은 기계 번호가 작은 쪽을 고른다.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ def best_insert(inst, i, seq, prof, j):
     pj, dj, s_from_j = p[j], inst.d[j], s[j]
     size = len(seq)
     total_c = pref_c[size]
+    base_t = pref_t[size]  # 삽입 전 기계의 지연 합
     best_t = best_c = best_pos = -1
     for pos in range(size + 1):
         cj = comp[pos - 1] + s[seq[pos - 1]][j] + pj if pos else pj
@@ -45,7 +48,7 @@ def best_insert(inst, i, seq, prof, j):
                     t += late
             if best_pos >= 0 and t > best_t:
                 continue
-        if best_pos < 0 or t < best_t or (t == best_t and c < best_c):
+        if best_pos < 0 or t < best_t or (t == best_t == base_t == 0 and c < best_c):
             best_t, best_c, best_pos = t, c, pos
     return best_t, best_c, best_pos
 
@@ -60,10 +63,10 @@ def best_position_total(inst, sched, j):
     best = None
     for i in inst.elig[j]:
         tard, csum, pos = best_position(inst, i, sched.seqs[i], j)
-        key = (tard - sched.tard[i], csum - sched.csum[i], i, pos)
+        key = (tard - sched.tard[i], i, pos)
         if best is None or key < best:
             best = key
-    return best[2], best[3]
+    return best[1], best[2]
 
 
 def insert(inst, sched, i, pos, j):

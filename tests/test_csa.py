@@ -115,13 +115,28 @@ def test_random_moves_keep_benchmark_schedules_valid():
         assert validate(inst, sched) == [], inst.name
 
 
-def test_receptor_editing_perturbs_a_local_optimum():
+def test_receptor_editing_uses_the_improving_operators_by_default():
+    # 논문 6절: 외부 삽입/교환 연산자는 개선이 있을 때만 이동하므로, 지역 최적해는 그대로이고 총 지연은 늘지 않는다
+    rng = random.Random(12)
+    inst = hard_instance(6)
+    sched = grasp(inst, rng)
+    vnd(inst, sched, rng)
+    seqs, total = [seq[:] for seq in sched.seqs], sched.total
+    receptor_editing(inst, sched, rng)
+    assert sched.total <= total and validate(inst, sched) == []
+    worse = grasp(inst, random.Random(1))
+    before = worse.total
+    receptor_editing(inst, worse, rng)
+    assert worse.total <= before and validate(inst, worse) == []
+
+
+def test_receptor_editing_with_random_moves_perturbs_a_local_optimum():
     rng = random.Random(12)
     inst = hard_instance(6)
     sched = grasp(inst, rng)
     vnd(inst, sched, rng)
     before = {j: i for i, seq in enumerate(sched.seqs) for j in seq}
-    receptor_editing(inst, sched, rng)
+    receptor_editing(inst, sched, rng, random_moves=True)
     moved = sum(1 for i, seq in enumerate(sched.seqs) for j in seq if before[j] != i)
     assert 1 <= moved <= MUTMAX  # 개선 여부와 무관하게 1회에서 MUTMAX회 사이의 이동이 적용된다
     assert validate(inst, sched) == []
@@ -136,8 +151,14 @@ def test_rcl_size_reads_k_as_a_count_or_as_a_percentage():
 
 def test_grasp_is_a_deterministic_greedy_construction_when_the_list_holds_one_job():
     inst = hard_instance(0)  # n = 6이므로 5% 목록에는 항상 작업이 하나만 들어간다
-    schedules = {str(grasp(inst, random.Random(seed)).seqs) for seed in range(5)}
+    schedules = {str(grasp(inst, random.Random(seed), percent=True).seqs) for seed in range(5)}
     assert len(schedules) == 1
+
+
+def test_grasp_defaults_to_a_list_of_five_jobs_and_is_randomized():
+    inst = hard_instance(3)  # n = 15
+    schedules = {str(grasp(inst, random.Random(seed)).seqs) for seed in range(10)}
+    assert len(schedules) > 1
 
 
 def test_clone_priority_resets_only_after_an_improvement():
@@ -186,20 +207,21 @@ def test_reselect_keeps_the_best_and_then_prefers_distant_solutions():
     assert reselect([far, near, best], rng, size=5, x=4) == [best, far, near]
 
 
-def test_reselect_does_not_allow_repeated_solutions():
+def test_reselect_allows_repeated_solutions_but_prefers_distant_ones():
+    # 논문 6절은 중복 제거를 말하지 않는다. 같은 해는 거리가 0이므로 다른 해보다 뒤에 뽑힌다
     inst = tiny_instance()
     best = Cell(Schedule.from_seqs(inst, [[0, 2], [3, 1]]))
     twin = Cell(Schedule.from_seqs(inst, [[0, 2], [3, 1]]))
     far = Cell(Schedule.from_seqs(inst, [[2, 0], [1, 3]]))
-    assert reselect([best, twin, far], random.Random(0), size=3, x=4) == [best, far]
+    assert reselect([best, twin, far], random.Random(0), size=3, x=4) == [best, far, twin]
 
 
-def test_reselect_breaks_ties_in_the_objective_at_random():
+def test_reselect_keeps_the_pool_order_for_ties_in_the_objective():
     inst = tiny_instance()
     one = Cell(Schedule.from_seqs(inst, [[2, 0], [3, 1]]))
     other = Cell(Schedule.from_seqs(inst, [[2, 0], [1, 3]]))  # 두 해의 총 지연은 모두 3이다
-    firsts = {id(reselect([one, other], random.Random(seed), size=1, x=4)[0]) for seed in range(20)}
-    assert len(firsts) == 2
+    assert {id(reselect([one, other], random.Random(seed), size=1, x=4)[0]) for seed in range(20)} == {id(one)}
+    assert reselect([other, one], random.Random(0), size=1, x=4)[0] is other
 
 
 # ---- 알고리즘 전체 ----
@@ -245,8 +267,8 @@ def test_csa_runs_every_requested_generation_unless_it_reaches_zero():
     assert len(result.info["trace"]) == 31
 
 
-def test_csa_accepts_the_count_reading_of_the_candidate_list():
+def test_csa_accepts_the_percentage_reading_of_the_candidate_list():
     for inst in hard_instances()[:4]:
-        result = csa_t(inst, random.Random(13), Budget(max_iters=3), rcl_percent=False)
+        result = csa_t(inst, random.Random(13), Budget(max_iters=3), rcl_percent=True)
         assert validate(inst, result.schedule) == [], inst.name
         assert result.objective <= h5(inst).total

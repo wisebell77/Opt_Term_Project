@@ -46,7 +46,7 @@ python -m experiments.convergence --instance medium/I_15_2_124_100_T04_R02_1 --e
 | 옵션 | 기본값 | 의미 |
 |---|---|---|
 | `--size` | 필수 | `small` 또는 `medium` |
-| `--methods` | 기본 6개 | 쉼표로 구분한 방법 이름. 기본값은 `h5`, `csa_f`, `csa_t`, `sa_geo`, `sa_log`, `sa_exp`이고, 비교용 변형인 `csa_f_k5`와 `csa_t_k5`는 직접 지정해야 실행됩니다. |
+| `--methods` | 기본 6개 | 쉼표로 구분한 방법 이름. 기본값은 `h5`, `csa_f`, `csa_t`, `sa_geo`, `sa_log`, `sa_exp`이고, 비교용 변형인 `csa_f_pct`, `csa_t_pct`(GRASP 목록을 5%로 읽음)와 `csa_f_rnd`, `csa_t_rnd`(수용체 편집을 무작위 이동으로 함)는 직접 지정해야 실행됩니다. |
 | `--reps` | 5 | 난수를 쓰는 방법의 반복 횟수 |
 | `--scale` | 1.0 | 시간 제한 n·m·30/2 밀리초에 곱하는 속도 보정 계수 c |
 | `--workers` | 논리 코어 수의 절반 | 동시에 실행하는 프로세스 수 |

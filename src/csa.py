@@ -1,11 +1,13 @@
 """클론 선택 알고리즘 CSA_f, CSA_t.
 
-대상 논문(Perez-Gonzalez et al., 2019)의 6절이 Diana et al.(2015)의 알고리즘을 총 지연과 적격성에 맞게
-고친 것이며, 대상 논문이 생략한 세부는 Diana et al.(2015)의 3절을 따른다.
-- 수용체 편집은 수락 검사가 없는 무작위 이동이고, VND는 개선될 때마다 첫 이웃으로 돌아간다.
-- 재선택에서는 같은 해의 반복을 허용하지 않고, 목적함수가 같은 해의 순서는 무작위로 정한다.
-- 우선도는 개선된 해에서 100이 되고, 개선되지 않은 세대마다 D_PRIOR만큼 낮아진다.
-두 논문 어디에도 없는 본 프로젝트의 규칙은 src/README.md에 정리되어 있다.
+대상 논문(Perez-Gonzalez et al., 2019)의 6절을 문면 그대로 따른다(paper-faithful 브랜치).
+- GRASP 제한 목록의 크기 k = 5는 작업 5개이다(rcl_percent=True이면 미배정 작업의 5%로 읽는다).
+- 수용체 편집은 논문의 외부 삽입/외부 교환 연산자를 쓴다(개선이 있을 때만 이동). pmut의 확률로 외부 교환을,
+  그렇지 않으면 외부 삽입을 쓰며, 논문의 값 PMUT = 0이므로 외부 삽입만 쓰인다.
+  receptor_random=True이면 Diana et al.(2015)처럼 수락 검사가 없는 무작위 이동을 쓴다.
+- 재선택은 중복 제거나 무작위 섞기 없이 목적함수 오름차순(안정 정렬)으로 진행한다.
+- 우선도는 개선된 해에서 100이 되고, 개선되지 않은 세대마다 D_PRIOR만큼 낮아진다(논문은 세부를 적지 않음).
+논문에 없는 본 프로젝트의 규칙은 src/README.md에 정리되어 있다.
 """
 from __future__ import annotations
 
@@ -16,7 +18,7 @@ from .schedule import Schedule, machine_cost
 
 # 논문의 파라미터 값
 MU = 20  # 기억 집합의 크기
-K_RCL = 5  # GRASP 제한 목록의 크기(기본 해석은 미배정 작업의 5%)
+K_RCL = 5  # GRASP 제한 목록의 크기(기본 해석은 작업 5개)
 NC = 60  # 세대당 클론 수
 D_PRIOR = 5  # 우선도 감소량
 MUTMAX = 2  # 다양화 변이의 최대 횟수
@@ -26,14 +28,14 @@ X = 4  # 재선택 후보 목록의 크기
 
 # ---------- 초기 해 생성 ----------
 
-def rcl_size(remaining, percent=True):
+def rcl_size(remaining, percent=False):
     """GRASP 제한 목록의 크기. K_RCL을 미배정 작업에 대한 비율(%)로 읽거나(Diana et al., 2015), 작업의 개수로 읽는다(대상 논문의 문면)."""
     if percent:
         return max(1, -(-K_RCL * remaining // 100))
     return min(K_RCL, remaining)
 
 
-def grasp(inst, rng, percent=True):
+def grasp(inst, rng, percent=False):
     """미배정 작업 중 삽입 후 총 지연이 작은 작업들로 제한 목록을 만들고, 하나를 무작위로 골라 최선 위치에 넣는 과정을 반복한다."""
     sched = Schedule.empty(inst)
     empty = profile(inst, 0, [])
@@ -41,8 +43,9 @@ def grasp(inst, rng, percent=True):
     best = [{i: best_insert(inst, i, [], empty, j) for i in inst.elig[j]} for j in range(inst.n)]
     rest = list(range(inst.n))
     while rest:
-        options = sorted(min((best[j][i][0], best[j][i][1], i, best[j][i][2]) for i in inst.elig[j]) + (j,) for j in rest)
-        _, _, i, pos, j = rng.choice(options[: rcl_size(len(rest), percent)])
+        # 제한 목록은 삽입 후 총 지연이 작은 순서이며, 동점은 논문이 정하지 않았으므로 작업 번호 순으로 둔다
+        options = sorted((d, j, i, pos) for j in rest for d, i, pos in [min((best[j][i][0], i, best[j][i][2]) for i in inst.elig[j])])
+        _, j, i, pos = rng.choice(options[: rcl_size(len(rest), percent)])
         seq = sched.seqs[i]
         sched.set_machine(inst, i, seq[:pos] + [j] + seq[pos:])
         rest.remove(j)
@@ -193,10 +196,17 @@ def random_ext_swap(inst, sched, rng):
     return True
 
 
-def receptor_editing(inst, sched, rng):
-    """다양화 변이: U[1, MUTMAX]회의 무작위 이동. 확률 PMUT로 외부 교환을, 그렇지 않으면 외부 삽입을 적용한다."""
+def receptor_editing(inst, sched, rng, random_moves=False):
+    """다양화 변이: U[1, MUTMAX]회의 변이. 확률 PMUT로 외부 교환을, 그렇지 않으면 외부 삽입을 적용한다.
+
+    기본(논문 6절)은 i*에 대한 외부 삽입/교환 연산자를 그대로 쓰며 개선이 없으면 이동하지 않는다.
+    random_moves=True이면 Diana et al.(2015)처럼 수락 검사 없는 무작위 이동을 쓴다."""
+    if random_moves:
+        swap, insert = random_ext_swap, random_ext_insert
+    else:
+        swap, insert = ext_swap, ext_insert
     for _ in range(rng.randint(1, MUTMAX)):
-        move = random_ext_swap if rng.random() < PMUT else random_ext_insert
+        move = swap if rng.random() < PMUT else insert
         move(inst, sched, rng)
 
 
@@ -253,18 +263,10 @@ def fitness(cells):
 
 
 def reselect(pool, rng, size=MU, x=X):
-    """목적함수가 좋은 해와, 이미 고른 해들에서 멀리 떨어진 해로 다음 기억 집합을 구성한다.
+    """목적함수가 좋은 해와, 이미 고른 해들에서 멀리 떨어진 해로 다음 기억 집합을 구성한다(논문 6절).
 
-    같은 해는 한 번만 남기고(pool의 앞쪽 것을 남긴다), 목적함수가 같은 해의 순서는 무작위로 정한다.
-    """
-    seen, unique = set(), []
-    for cell in pool:
-        key = tuple(map(tuple, cell.sched.seqs))
-        if key not in seen:
-            seen.add(key)
-            unique.append(cell)
-    rng.shuffle(unique)
-    pool = sorted(unique, key=lambda cell: cell.sched.total)
+    pool을 목적함수 오름차순으로 안정 정렬한다(같은 해의 반복을 허용하며, 동점은 pool의 앞쪽이 먼저)."""
+    pool = sorted(pool, key=lambda cell: cell.sched.total)
     chosen = [pool[0]]
     window = [(distance(cell, pool[0]), cell) for cell in pool[1 : 1 + x]]  # (고른 해들과의 최소 거리, 해)
     upcoming = 1 + x
@@ -282,7 +284,7 @@ def reselect(pool, rng, size=MU, x=X):
 
 # ---------- 알고리즘 본체 ----------
 
-def csa(inst, rng, budget, use_h5, rcl_percent=True):
+def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False):
     budget.start()
     cells = [Cell(h5(inst))] if use_h5 else []
     while len(cells) < MU and not (cells and (budget.done() or cells[-1].sched.total == 0)):
@@ -296,7 +298,7 @@ def csa(inst, rng, budget, use_h5, rcl_percent=True):
             if budget.done():
                 break
             clone = parent.sched.copy()
-            receptor_editing(inst, clone, rng)
+            receptor_editing(inst, clone, rng, receptor_random)
             vnd(inst, clone, rng)
             clones.append(Cell(clone, clone_priority(parent.prio, clone.total < parent.sched.total)))
             if clone.total < best.total:
@@ -311,11 +313,11 @@ def csa(inst, rng, budget, use_h5, rcl_percent=True):
     return Result(best.copy(), best.total, budget.elapsed(), budget.iters, {"trace": trace})
 
 
-def csa_f(inst, rng, budget, rcl_percent=True):
+def csa_f(inst, rng, budget, rcl_percent=False, receptor_random=False):
     """초기 기억 집합을 GRASP만으로 생성한다."""
-    return csa(inst, rng, budget, use_h5=False, rcl_percent=rcl_percent)
+    return csa(inst, rng, budget, False, rcl_percent, receptor_random)
 
 
-def csa_t(inst, rng, budget, rcl_percent=True):
+def csa_t(inst, rng, budget, rcl_percent=False, receptor_random=False):
     """초기 기억 집합에 H5의 해를 포함한다."""
-    return csa(inst, rng, budget, use_h5=True, rcl_percent=rcl_percent)
+    return csa(inst, rng, budget, True, rcl_percent, receptor_random)

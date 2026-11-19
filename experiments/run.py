@@ -41,9 +41,12 @@ METHODS = {
     "sa_geo": (lambda inst, rng, budget: sa_t(inst, rng, budget, "geo"), True),
     "sa_log": (lambda inst, rng, budget: sa_t(inst, rng, budget, "log"), True),
     "sa_exp": (lambda inst, rng, budget: sa_t(inst, rng, budget, "exp"), True),
-    # GRASP 제한 목록의 크기를 5%가 아니라 5개로 읽는 변형. 해석의 영향을 비교할 때에만 --methods로 지정한다
-    "csa_f_k5": (lambda inst, rng, budget: csa_f(inst, rng, budget, rcl_percent=False), True),
-    "csa_t_k5": (lambda inst, rng, budget: csa_t(inst, rng, budget, rcl_percent=False), True),
+    # 논문과 다르게 읽는 변형. 해석의 영향을 비교할 때에만 --methods로 지정한다
+    # pct: GRASP 제한 목록을 미배정 작업의 5%로 읽음, rnd: 수용체 편집을 수락 검사 없는 무작위 이동으로 함
+    "csa_f_pct": (lambda inst, rng, budget: csa_f(inst, rng, budget, rcl_percent=True), True),
+    "csa_t_pct": (lambda inst, rng, budget: csa_t(inst, rng, budget, rcl_percent=True), True),
+    "csa_f_rnd": (lambda inst, rng, budget: csa_f(inst, rng, budget, receptor_random=True), True),
+    "csa_t_rnd": (lambda inst, rng, budget: csa_t(inst, rng, budget, receptor_random=True), True),
 }
 DEFAULT_METHODS = ["h5", "csa_f", "csa_t", "sa_geo", "sa_log", "sa_exp"]
 
