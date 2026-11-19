@@ -35,3 +35,19 @@ def test_milp_schedule_evaluates_to_the_reported_objective():
 def test_largest_small_instance_fits_the_solver_license():
     inst = load_instance(list_instances("small")[-1])  # n = 12, m = 5
     assert solve_milp(inst)["optimal"]
+
+
+def test_paper_model_and_tight_model_give_the_same_optimum():
+    # 논문의 모형(비적격 기계에 매우 큰 가공시간)과 비적격 변수를 뺀 강화 모형은 최적값이 같아야 한다
+    instances = hard_instances()[:3] + [load_instance(p) for p in list_instances("small")[7:400:97]]  # n = 6
+    for inst in instances:
+        paper, tight = solve_milp(inst), solve_milp(inst, tight=True)
+        assert paper["optimal"] and tight["optimal"], inst.name
+        assert paper["consistent"] and tight["consistent"], inst.name
+        assert paper["objective"] == tight["objective"], inst.name
+
+
+def test_paper_model_never_uses_an_ineligible_machine_and_runs_without_time_limit():
+    for inst in hard_instances()[:3]:
+        result = solve_milp(inst, time_limit=None)
+        assert validate(inst, result["schedule"]) == [], inst.name
