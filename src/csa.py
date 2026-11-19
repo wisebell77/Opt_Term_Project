@@ -74,15 +74,15 @@ def int_swap(inst, sched, rng=None):
     for a in range(len(seq) - 1):
         for b in range(a + 1, len(seq)):
             seq[a], seq[b] = seq[b], seq[a]
-            key = machine_cost(inst, i, seq) + (a, b)
+            key = (machine_cost(inst, i, seq)[0], a, b)  # 지연이 같으면 먼저 찾은 쌍(논문에 동점 규정 없음)
             if key[0] < sched.tard[i] and key < best:
                 best = key
             seq[a], seq[b] = seq[b], seq[a]
     if len(best) == 1:
         return False
-    a, b = best[2], best[3]
+    a, b = best[1], best[2]
     seq[a], seq[b] = seq[b], seq[a]
-    sched.set_machine(inst, i, seq, best[:2])
+    sched.set_machine(inst, i, seq)
     return True
 
 
@@ -105,14 +105,13 @@ def ext_insert(inst, sched, rng):
             tard_w, csum_w, pos = best_insert(inst, w, seq_w, prof, j)
             key = (
                 removed[a][0] + tard_w - sched.tard[i] - sched.tard[w],
-                removed[a][1] + csum_w - sched.csum[i] - sched.csum[w],
                 a,
                 pos,
             )
             if best is None or key < best:
                 best = key
         if best is not None and best[0] < 0:
-            _, _, a, pos = best
+            _, a, pos = best
             j = seq_i[a]
             sched.set_machine(inst, i, seq_i[:a] + seq_i[a + 1 :], removed[a])
             sched.set_machine(inst, w, seq_w[:pos] + [j] + seq_w[pos:])
@@ -130,7 +129,7 @@ def ext_swap(inst, sched, rng):
     ok_i, seq_i = inst.ok[i], sched.seqs[i][:]
     for w in others:
         ok_w, seq_w = inst.ok[w], sched.seqs[w][:]
-        base_t, base_c = sched.tard[i] + sched.tard[w], sched.csum[i] + sched.csum[w]
+        base_t = sched.tard[i] + sched.tard[w]
         best = None
         for a, ja in enumerate(seq_i):
             if not ok_w[ja]:
@@ -141,11 +140,11 @@ def ext_swap(inst, sched, rng):
                 seq_i[a], seq_w[b] = jb, ja
                 cost_i, cost_w = machine_cost(inst, i, seq_i), machine_cost(inst, w, seq_w)
                 seq_i[a], seq_w[b] = ja, jb
-                key = (cost_i[0] + cost_w[0] - base_t, cost_i[1] + cost_w[1] - base_c, a, b)
+                key = (cost_i[0] + cost_w[0] - base_t, a, b)
                 if best is None or key < best:
                     best = key
         if best is not None and best[0] < 0:
-            _, _, a, b = best
+            _, a, b = best
             seq_i[a], seq_w[b] = seq_w[b], seq_i[a]
             sched.set_machine(inst, i, seq_i)
             sched.set_machine(inst, w, seq_w)
