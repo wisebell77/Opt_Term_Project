@@ -50,6 +50,8 @@ python -m experiments.analyze
 
 옵션, 여러 노트북에 나누어 실행하는 방법, 지표의 정의는 `experiments/README.md`에 있습니다.
 
+중규모 인스턴스 전체를 실행하고 결과를 올리는 순서는 `RUN_MEDIUM.md`에 따로 정리되어 있습니다.
+
 ## 방법 이름
 
 | 이름 | 방법 |

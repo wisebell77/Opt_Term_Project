@@ -10,6 +10,7 @@
 | `run.py` | H5, CSA_f, CSA_t, SA_t(냉각 3종)를 실행합니다. | `results/raw_<크기>_<태그>.csv` |
 | `analyze.py` | 실행 기록을 읽어 지표를 계산하고 표와 그림을 만듭니다. | `results/summary_*.csv`, `factors_*.csv`, `instances_*.csv`, `wilcoxon.csv`, `fig_rdi.png` |
 | `convergence.py` | 인스턴스 하나에서 냉각 방식 3종의 수렴 곡선을 그립니다. | `results/convergence_<인스턴스>.png` |
+| `compare_paper.py` | H5, CSA_f, CSA_t의 ARDI를 논문의 표 2(소규모), 표 3(중규모)과 요인별로 비교합니다. `--size medium`으로 중규모를 지정합니다. | 화면 출력 |
 
 ## 실행 순서
 

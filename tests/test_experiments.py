@@ -87,3 +87,49 @@ def test_analyze_size_works_when_no_milp_result_exists(tmp_path, monkeypatch):
     assert summary.set_index("method").loc["csa_t", "rpd_mean"] == pytest.approx(50.0)
     assert (test["first_better"], test["ties"], test["second_better"]) == (0, 1, 1)
     assert (tmp_path / "summary_medium.csv").exists()
+
+
+# ---------- 논문 표와의 비교(compare_paper) ----------
+
+def _write_raw(path, rows):
+    pd.DataFrame(rows, columns=["instance", "method", "objective", "elapsed"]).to_csv(path, index=False)
+
+
+def test_compare_paper_uses_the_milp_optimum_when_a_milp_file_is_given(tmp_path):
+    from experiments import compare_paper
+
+    raw, milp = tmp_path / "raw.csv", tmp_path / "milp.csv"
+    name = "I_6_2_49_50_T04_R02_1"
+    _write_raw(raw, [(name, "h5", 30, 0.0), (name, "csa_f", 20, 0.1), (name, "csa_f", 10, 0.1), (name, "csa_t", 10, 0.1)])
+    pd.DataFrame({"instance": [name], "objective": [10]}).to_csv(milp, index=False)
+    rows, elapsed = compare_paper.load(raw, milp)
+    assert len(rows) == 1 and rows[0]["opt"] == 10
+    assert rows[0]["v"] == {"h5": 30, "csa_f": 15, "csa_t": 10, "milp": 10}
+    assert rows[0]["rdi"]["h5"] == 100 and rows[0]["rdi"]["csa_f"] == 25 and rows[0]["rdi"]["csa_t"] == 0
+    assert elapsed["csa_f"] == [0.1, 0.1]
+
+
+def test_compare_paper_falls_back_to_the_best_run_without_a_milp_file(tmp_path):
+    from experiments import compare_paper
+
+    raw = tmp_path / "raw.csv"
+    name = "I_15_2_49_50_T04_R02_1"
+    _write_raw(raw, [(name, "h5", 30, 0.0), (name, "csa_f", 20, 0.1), (name, "csa_f", 12, 0.1), (name, "csa_t", 14, 0.1)])
+    rows, _ = compare_paper.load(raw, None)
+    # MILP가 없으면 기준값은 모든 실행의 최선값이고, RDI는 실행한 방법들 사이에서만 계산한다
+    assert rows[0]["opt"] == 12 and "milp" not in rows[0]["v"]
+    assert rows[0]["rdi"]["h5"] == 100 and rows[0]["rdi"]["csa_t"] == 0
+
+
+def test_compare_paper_tables_cover_every_factor_level_of_both_sizes():
+    from experiments import compare_paper
+    from src.instance import list_instances, parse_name
+
+    for size in ("small", "medium"):
+        levels = {(key, value) for path in list_instances(size) for key, value in parse_name(path.stem).items() if key != "idx"}
+        table = compare_paper.PAPER[size]
+        assert levels == {key for key in table if key != "Total"}, size
+        assert all(len(values) == 3 for values in table.values())
+    # 논문 표 3의 합계 행(H5, CSA_f, CSA_t)
+    assert compare_paper.PAPER["medium"]["Total"] == (1.645, 1.416, 0.338)
+    assert compare_paper.PAPER["small"]["Total"] == (5.687, 6.888, 2.088)
