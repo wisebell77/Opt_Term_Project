@@ -67,6 +67,9 @@ for _mode in tiebreak.MODES[1:]:
     for _name in ("h5", "csa_f", "csa_t"):
         METHODS[f"{_name}_{_mode}"] = (with_tie(_mode, METHODS[_name][0]), METHODS[_name][1] or _mode == "random")
         TIE_METHODS.append(f"{_name}_{_mode}")
+# SA_t에는 자체 동점 결정이 없으므로 기준은 출발해인 H5에만 영향을 준다. SA_t는 기준 random에서만 실행한다
+for _name in ("sa_geo", "sa_log", "sa_exp"):
+    METHODS[f"{_name}_random"] = (with_tie("random", METHODS[_name][0]), True)
 
 FIELDS = [
     "instance", "size", "n", "m", "setup", "p", "tau", "R", "idx",

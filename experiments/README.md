@@ -93,6 +93,12 @@ python -m experiments.analyze_tiebreak --size small
 - 결과 파일을 `results/tiebreak`에 두는 이유는 `analyze.py`가 `results`의 `raw_*.csv`를 모두 읽기 때문입니다. 기준별 실행이 본 실험의 집계에 섞이지 않도록 `--out`으로 폴더를 나눕니다.
 - `analyze_tiebreak.py`는 기준별 지표(최적값 도달 비율, 평균 총 지연, RPD), 기준 `first`와의 인스턴스별 비교, 요인별 도달 비율, H5 구성 단계에서 기준에 따라 선택이 달라지는 삽입 결정의 비율을 출력합니다.
 
+SA_t는 기준 `random`에서 실행합니다. SA_t에는 자체 동점 결정이 없으므로, 기준은 출발해인 H5에만 영향을 줍니다. 같은 결과 파일에 이어서 기록하면, `analyze_tiebreak.py`가 냉각 방식 3종과 CSA_t(기준 `random`)의 비교를 함께 출력합니다.
+
+```bash
+python -m experiments.run --size small --methods sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --tag tiebreak --out results/tiebreak/raw_small.csv
+```
+
 ## 지표의 정의
 
 - **기준값**: MILP의 최적값이 있는 인스턴스는 최적값을, 없는 인스턴스는 실행한 모든 방법이 찾은 최선값을 사용합니다.

@@ -1,7 +1,9 @@
 """동점 처리 기준 실험의 집계: 기준(first, last, csum, random)별로 H5, CSA_f, CSA_t의 지표를 비교한다.
+같은 파일에 SA_t(기준 random)의 실행 기록이 있으면, 냉각 방식 3종과 CSA_t의 비교도 함께 출력한다.
 
 사용 예 (codes 폴더에서 실행):
     python -m experiments.run --size small --methods tiebreak --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
+    python -m experiments.run --size small --methods sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
     python -m experiments.analyze_tiebreak --size small
 
 기준의 뜻은 src/tiebreak.py에 있다. 기준값은 MILP 결과(results/milp_<크기>.csv)가 있으면 최적값이고,
@@ -20,12 +22,13 @@ from src.insertion import best_position_total, insert
 from src.instance import RESULTS_DIR, list_instances, load_instance, parse_name
 from src.schedule import Schedule
 
-BASES = ("h5", "csa_f", "csa_t")
+BASES = ("h5", "csa_f", "csa_t", "sa_geo", "sa_log", "sa_exp")
+SA = ("sa_geo", "sa_log", "sa_exp")
 FACTORS = ("tau", "n", "m")
 
 
 def split(method):
-    """방법 이름을 (방법, 기준)으로 나눈다. 이름에 기준이 없으면 first이고, 이 실험의 대상이 아니면 None이다."""
+    """방법 이름을 (방법, 기준)으로 나눈다. 이름에 기준이 없으면 first이고, 집계의 대상이 아니면 None이다."""
     if method in BASES:
         return method, "first"
     base, _, mode = method.rpartition("_")
@@ -62,7 +65,7 @@ def summarize(data):
 
     hit: 기준값에 도달한 실행의 비율(%), mean: 인스턴스별 평균 총 지연의 평균, rpd: 기준값이 양수인 인스턴스의 평균 RPD(%),
     missed: 평균이 기준값보다 큰 인스턴스의 수, unstable: 반복 사이에 값이 달라진 인스턴스의 수,
-    gens: 기준값이 양수인 인스턴스에서의 평균 반복 횟수(CSA의 세대 수)."""
+    gens: 기준값이 양수인 인스턴스에서의 평균 반복 횟수(CSA는 세대 수, SA는 이웃 해 평가 횟수)."""
     out = {}
     for key in sorted({key for entry in data.values() for key in entry["runs"]}):
         hits = total = missed = unstable = 0
@@ -87,16 +90,23 @@ def summarize(data):
     return out
 
 
-def against_first(data, base, mode):
-    """인스턴스별 평균 총 지연을 기준 first와 비교한 (더 좋은, 같은, 더 나쁜) 인스턴스의 수."""
+def compare(data, first, second):
+    """인스턴스별 평균 총 지연을 비교하여, second가 first보다 (더 좋은, 같은, 더 나쁜) 인스턴스의 수를 돌려준다.
+
+    first와 second는 (기준, 방법)이다."""
     better = same = worse = 0
     for entry in data.values():
-        first, other = entry["runs"].get(("first", base)), entry["runs"].get((mode, base))
-        if not first or not other:
+        a, b = entry["runs"].get(first), entry["runs"].get(second)
+        if not a or not b:
             continue
-        diff = sum(other) / len(other) - sum(first) / len(first)
+        diff = sum(b) / len(b) - sum(a) / len(a)
         better, same, worse = better + (diff < 0), same + (diff == 0), worse + (diff > 0)
     return better, same, worse
+
+
+def against_first(data, base, mode):
+    """인스턴스별 평균 총 지연을 기준 first와 비교한 (더 좋은, 같은, 더 나쁜) 인스턴스의 수."""
+    return compare(data, ("first", base), (mode, base))
 
 
 def sign_test(better, worse):
@@ -145,7 +155,7 @@ def main():
     print(f"인스턴스 {len(data)}개, {reference}이 양수인 인스턴스 {positive}개")
 
     print(f"\n[1] 기준별 지표 ({reference} 기준)")
-    print(f"{'방법':6s} {'기준':7s} | 도달(%)  평균 지연  RPD(%)  놓친 인스턴스  반복 간 차이  평균 세대 수")
+    print(f"{'방법':6s} {'기준':7s} | 도달(%)  평균 지연  RPD(%)  놓친 인스턴스  반복 간 차이  평균 반복 수")
     for base in BASES:
         for mode in tiebreak.MODES:
             row = summary.get((mode, base))
@@ -155,6 +165,8 @@ def main():
 
     print("\n[2] 기준 first와의 인스턴스별 비교 (더 좋음 / 같음 / 더 나쁨, 괄호는 부호 검정의 p값)")
     for base in BASES:
+        if ("first", base) not in summary:
+            continue
         cells = []
         for mode in tiebreak.MODES[1:]:
             if (mode, base) in summary:
@@ -168,9 +180,9 @@ def main():
         for level in sorted({f[factor] for f in factors.values()}):
             part = summarize({name: entry for name, entry in data.items() if factors[name][factor] == level})
             cells = [f"{base} " + " ".join(f"{part[(mode, base)]['hit']:6.2f}" for mode in tiebreak.MODES if (mode, base) in part)
-                     for base in BASES]
+                     for base in BASES if any(key[1] == base for key in part)]
             print(f"{factor}={level!s:5s} | " + "   ".join(cells))
-    print("  (방법마다 " + ", ".join(tiebreak.MODES) + "의 순서)")
+    print("  (방법마다 실행한 기준을 " + ", ".join(tiebreak.MODES) + "의 순서로 표시)")
 
     print("\n[4] H5 구성 단계의 삽입 결정 가운데 기준에 따라 선택이 달라지는 비율(%)")
     counts = defaultdict(lambda: [0, 0, 0])
@@ -182,6 +194,14 @@ def main():
     for group, (decisions, differ_last, differ_csum) in sorted(counts.items()):
         print(f"{group:8s} | 결정 {decisions:6d}개, first와 last가 다른 결정 {100 * differ_last / decisions:5.1f}%, "
               f"first와 csum이 다른 결정 {100 * differ_csum / decisions:5.1f}%")
+
+    if any(("random", base) in summary for base in SA):
+        print("\n[5] 기준 random에서의 방법 비교 (오른쪽 방법이 더 좋음 / 같음 / 더 나쁨, 괄호는 부호 검정의 p값)")
+        pairs = [("csa_t", base) for base in SA] + [("sa_geo", "sa_log"), ("sa_geo", "sa_exp"), ("sa_log", "sa_exp")]
+        for first, second in pairs:
+            if ("random", first) in summary and ("random", second) in summary:
+                better, same, worse = compare(data, ("random", first), ("random", second))
+                print(f"{first:6s} 대 {second:6s} | {better}/{same}/{worse} (p={sign_test(better, worse):.3g})")
 
 
 if __name__ == "__main__":

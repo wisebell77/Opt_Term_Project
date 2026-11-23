@@ -63,6 +63,7 @@ python -m experiments.analyze
 | `csa_f_pct`, `csa_t_pct` | GRASP 제한 목록의 크기를 5개가 아니라 미배정 작업의 5%로 읽는 CSA 변형(비교용이며 기본 실행에는 포함되지 않음) |
 | `csa_f_rnd`, `csa_t_rnd` | 수용체 편집을 논문의 연산자가 아니라 수락 검사 없는 무작위 이동(Diana et al., 2015)으로 하는 CSA 변형(비교용) |
 | `h5_last`, `csa_f_csum`, `csa_t_random` 등 | H5, CSA_f, CSA_t에 다른 동점 처리 기준(`last`, `csum`, `random`)을 적용한 변형. 실행 방법은 `experiments/README.md`의 "동점 처리 기준 실험"에 있음 |
+| `sa_geo_random`, `sa_log_random`, `sa_exp_random` | 출발해인 H5에 동점 처리 기준 `random`을 적용한 SA_t |
 | `milp` | Gurobi로 구한 MILP의 해(소규모만) |
 
 ## 경로 규칙

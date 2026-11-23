@@ -470,6 +470,25 @@ def test_the_runner_registers_h5_and_csa_under_every_policy():
     assert len(run.TIE_METHODS) == 12 and set(run.TIE_METHODS) <= set(METHODS)
 
 
+def test_the_runner_registers_sa_under_the_random_policy():
+    for name in ("sa_geo_random", "sa_log_random", "sa_exp_random"):
+        assert METHODS[name][1] is True
+    assert not any(name.startswith("sa_") for name in run.TIE_METHODS)  # --methods tiebreak의 대상은 H5와 CSA뿐이다
+
+
+def test_sa_under_the_random_policy_starts_from_the_h5_solution_of_that_policy():
+    # SA_t에는 자체 동점 결정이 없고, 기준은 출발해인 H5에만 영향을 준다
+    inst = load_instance(DATA_DIR / "small" / "I_6_4_49_50_T04_R02_7.txt")
+    rng = random.Random(1)
+    with tiebreak.policy("random", rng):
+        start = h5(inst).total
+    assert (h5(inst).total, start) == (19, 34)  # 이 시드에서는 기준 random의 H5가 기준 first의 H5와 다르다
+    result = METHODS["sa_geo_random"][0](inst, random.Random(1), Budget(max_iters=50))
+    assert result.info["trace"][0] == (0, start)
+    assert validate(inst, result.schedule) == [] and result.objective <= start
+    assert tiebreak.mode == "first"
+
+
 def test_the_runner_applies_the_policy_and_restores_the_default():
     path = DATA_DIR / (HARD[3] + ".txt")
     inst = load_instance(path)
@@ -501,7 +520,9 @@ def test_method_names_are_split_into_method_and_policy():
     assert analyze_tiebreak.split("h5") == ("h5", "first")
     assert analyze_tiebreak.split("csa_f_last") == ("csa_f", "last")
     assert analyze_tiebreak.split("csa_t_random") == ("csa_t", "random")
-    assert analyze_tiebreak.split("sa_geo") is None  # 이 실험의 대상이 아닌 방법
+    assert analyze_tiebreak.split("sa_geo") == ("sa_geo", "first")
+    assert analyze_tiebreak.split("sa_exp_random") == ("sa_exp", "random")
+    assert analyze_tiebreak.split("csa_f_pct") is None  # 집계의 대상이 아닌 방법
 
 
 def write_runs(tmp_path):
@@ -510,7 +531,7 @@ def write_runs(tmp_path):
         # 인스턴스 A의 최적값은 10, B의 최적값은 0이다
         ("A", "h5", 0, 10), ("A", "h5_last", 0, 12), ("A", "csa_t", 0, 10), ("A", "csa_t", 1, 11),
         ("B", "h5", 0, 0), ("B", "h5_last", 0, 0), ("B", "csa_t", 0, 0), ("B", "csa_t", 1, 0),
-        ("A", "sa_geo", 0, 99),
+        ("A", "csa_f_pct", 0, 99),
     ]
     with raw.open("w", newline="") as handle:
         writer = csv.writer(handle)
@@ -536,6 +557,13 @@ def test_the_summary_reports_quality_by_policy_and_method(tmp_path):
 def test_policies_are_compared_with_the_first_policy_instance_by_instance(tmp_path):
     data = analyze_tiebreak.load(*write_runs(tmp_path))
     assert analyze_tiebreak.against_first(data, "h5", "last") == (0, 1, 1)  # (더 좋음, 같음, 더 나쁨)
+
+
+def test_two_methods_are_compared_instance_by_instance(tmp_path):
+    data = analyze_tiebreak.load(*write_runs(tmp_path))
+    # 인스턴스 A에서는 CSA_t의 평균(10.5)이 H5(10)보다 크고, B에서는 같다: (둘째가 더 좋음, 같음, 둘째가 더 나쁨)
+    assert analyze_tiebreak.compare(data, ("first", "h5"), ("first", "csa_t")) == (0, 1, 1)
+    assert analyze_tiebreak.compare(data, ("first", "csa_t"), ("first", "h5")) == (1, 1, 0)
 
 
 def test_the_sign_test_gives_the_exact_two_sided_p_value():
