@@ -579,6 +579,18 @@ def test_the_reference_is_the_best_run_when_no_milp_file_is_given(tmp_path):
     assert {name: entry["opt"] for name, entry in data.items()} == {"A": 10, "B": 0}
 
 
+def test_runs_are_loaded_from_several_files(tmp_path):
+    raw, _ = write_runs(tmp_path)
+    extra = tmp_path / "extra.csv"
+    with extra.open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["instance", "method", "rep", "objective", "elapsed", "iterations"])
+        writer.writerow(["A", "sa_geo_random", 0, 9, 0.5, 100])
+    data = analyze_tiebreak.load([raw, extra], None)
+    assert data["A"]["runs"][("random", "sa_geo")] == [9] and data["A"]["runs"][("first", "h5")] == [10]
+    assert data["A"]["opt"] == 9  # MILP 결과가 없으면 기준값은 모든 파일의 모든 실행 가운데 최선값이다
+
+
 def test_h5_decisions_follow_the_construction_of_h5():
     for path in list_instances("small")[::320] + list_instances("medium")[::960]:
         inst = load_instance(path)

@@ -99,6 +99,16 @@ SA_t는 기준 `random`에서 실행합니다. SA_t에는 자체 동점 결정�
 python -m experiments.run --size small --methods sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --tag tiebreak --out results/tiebreak/raw_small.csv
 ```
 
+중규모는 기준 `random`에서 여섯 방법을 한 번에 실행합니다. MILP 결과가 없으므로 기준값은 읽어 들인 모든 실행의 최선값이며, `--raw`에 기존 실행 기록을 함께 적으면 그 기록도 기준값과 비교에 포함됩니다.
+
+```bash
+python -m experiments.run --size medium --methods h5_random,csa_f_random,csa_t_random,sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --tag tiebreak --out results/tiebreak/raw_medium.csv
+```
+
+```bash
+python -m experiments.analyze_tiebreak --size medium --raw results/tiebreak/raw_medium.csv results/raw_medium_full.csv
+```
+
 ## 지표의 정의
 
 - **기준값**: MILP의 최적값이 있는 인스턴스는 최적값을, 없는 인스턴스는 실행한 모든 방법이 찾은 최선값을 사용합니다.

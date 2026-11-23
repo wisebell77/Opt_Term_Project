@@ -5,6 +5,7 @@
     python -m experiments.run --size small --methods tiebreak --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
     python -m experiments.run --size small --methods sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
     python -m experiments.analyze_tiebreak --size small
+    python -m experiments.analyze_tiebreak --size medium --raw results/tiebreak/raw_medium.csv results/raw_medium_full.csv
 
 기준의 뜻은 src/tiebreak.py에 있다. 기준값은 MILP 결과(results/milp_<크기>.csv)가 있으면 최적값이고,
 없으면 모든 기준의 모든 실행 가운데 최선값이다.
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import statistics as st
 from collections import defaultdict
 from math import comb
@@ -36,16 +38,19 @@ def split(method):
 
 
 def load(raw_path, milp_path=None):
-    """실행 기록을 {인스턴스: {"opt": 기준값, "runs": {(기준, 방법): [목적함수값]}, "iters": {(기준, 방법): [반복 횟수]}}}로 묶는다."""
+    """실행 기록을 {인스턴스: {"opt": 기준값, "runs": {(기준, 방법): [목적함수값]}, "iters": {(기준, 방법): [반복 횟수]}}}로 묶는다.
+
+    raw_path는 파일 하나 또는 파일의 목록이다."""
     runs = defaultdict(lambda: defaultdict(list))
     iters = defaultdict(lambda: defaultdict(list))
-    with open(raw_path, newline="") as handle:
-        for row in csv.DictReader(handle):
-            found = split(row["method"])
-            if found:
-                key = (found[1], found[0])
-                runs[row["instance"]][key].append(int(row["objective"]))
-                iters[row["instance"]][key].append(int(row["iterations"]))
+    for path in [raw_path] if isinstance(raw_path, (str, os.PathLike)) else raw_path:
+        with open(path, newline="") as handle:
+            for row in csv.DictReader(handle):
+                found = split(row["method"])
+                if found:
+                    key = (found[1], found[0])
+                    runs[row["instance"]][key].append(int(row["objective"]))
+                    iters[row["instance"]][key].append(int(row["iterations"]))
     optimum = {}
     if milp_path:
         with open(milp_path, newline="") as handle:
@@ -142,10 +147,10 @@ def decision_ties(inst):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--size", default="small", choices=["small", "medium"])
-    parser.add_argument("--raw", default=None, help="실행 기록 파일(기본값은 results/tiebreak/raw_<크기>.csv)")
+    parser.add_argument("--raw", nargs="+", default=None, help="실행 기록 파일. 여러 개를 적을 수 있다(기본값은 results/tiebreak/raw_<크기>.csv)")
     parser.add_argument("--milp", default=None, help="MILP 결과 파일(기본값은 results/milp_<크기>.csv가 있으면 그 파일)")
     args = parser.parse_args()
-    raw = args.raw or str(RESULTS_DIR / "tiebreak" / f"raw_{args.size}.csv")
+    raw = args.raw or [str(RESULTS_DIR / "tiebreak" / f"raw_{args.size}.csv")]
     default_milp = RESULTS_DIR / f"milp_{args.size}.csv"
     milp = args.milp or (str(default_milp) if default_milp.exists() else None)
     data = load(raw, milp)
