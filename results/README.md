@@ -15,6 +15,8 @@
 | `fig_rdi.png` | `experiments/analyze.py` | 방법별 평균 RDI 막대 그림 |
 | `convergence_<인스턴스>.png` | `experiments/convergence.py` | 냉각 방식 3종의 수렴 곡선 |
 
+`tiebreak` 폴더에는 동점 처리 기준 실험의 실행 기록과 결과 정리가 들어 있으며, `analyze.py`는 이 폴더를 읽지 않습니다.
+
 `milp_small.csv`는 소규모 인스턴스 3,840개의 계산을 마친 파일이 이미 들어 있습니다. `pilot` 폴더에는 코드 구현 직후에 수행한 예비 실행의 결과가 참고용으로 들어 있으며, `analyze.py`는 이 폴더를 읽지 않습니다.
 
 ## 열 설명

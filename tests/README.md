@@ -28,6 +28,7 @@ python -m pytest tests/test_csa.py
 | `test_sa.py` | 온도 설정과 냉각 방식 3종, 무작위 이동 1,000회에서 증분 평가와 전체 재계산이 일치하는지, 결과가 H5보다 나쁘지 않은지 |
 | `test_milp.py` | MILP의 최적값이 6작업 인스턴스의 전수 탐색 결과와 일치하는지, MILP의 해를 평가 함수로 계산한 값이 목적함수값과 같은지 |
 | `test_budget.py` | 시간 제한 계산식과 실행 예산의 동작 |
+| `test_tiebreak.py` | 동점 처리 기준 네 가지가 삽입 연산, H5, GRASP, 이웃 연산자에서 정해진 대로 고르는지, 기준 `first`가 기준을 도입하기 전의 결과와 같은지, 실행기와 집계(`analyze_tiebreak.py`)의 동작 |
 | `test_experiments.py` | 실험 실행기의 결과 행, 이어서 실행하기, 최적값 검사, 지표(RPD, RDI, 도달 비율) 계산 |
 | `helpers.py` | 테스트용 보조 함수: 손으로 계산할 수 있는 예제(`tiny_instance`), 최적값이 0보다 큰 인스턴스 목록(`HARD`), 전수 탐색(`brute_force_optimum`) |
 

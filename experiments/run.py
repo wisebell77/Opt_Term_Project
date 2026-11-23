@@ -19,6 +19,7 @@ import zlib
 from multiprocessing import Pool
 from pathlib import Path
 
+from src import tiebreak
 from src.budget import Budget, Result, time_limit_seconds
 from src.csa import csa_f, csa_t
 from src.h5 import h5
@@ -49,6 +50,23 @@ METHODS = {
     "csa_t_rnd": (lambda inst, rng, budget: csa_t(inst, rng, budget, receptor_random=True), True),
 }
 DEFAULT_METHODS = ["h5", "csa_f", "csa_t", "sa_geo", "sa_log", "sa_exp"]
+
+
+def with_tie(mode, algorithm):
+    """동점 처리 기준 mode를 적용하여 algorithm을 실행하는 함수를 만든다. 기준 random은 실행의 난수를 함께 쓴다."""
+    def run(inst, rng, budget):
+        with tiebreak.policy(mode, rng):
+            return algorithm(inst, rng, budget)
+    return run
+
+
+# 동점 처리 기준 실험용 변형: h5_last, csa_f_csum, csa_t_random 등. 이름에 기준이 없는 h5, csa_f, csa_t가 기준 first이다.
+# 기준 random에서는 H5의 결과도 실행마다 달라지므로 반복 실행한다
+TIE_METHODS = ["h5", "csa_f", "csa_t"]
+for _mode in tiebreak.MODES[1:]:
+    for _name in ("h5", "csa_f", "csa_t"):
+        METHODS[f"{_name}_{_mode}"] = (with_tie(_mode, METHODS[_name][0]), METHODS[_name][1] or _mode == "random")
+        TIE_METHODS.append(f"{_name}_{_mode}")
 
 FIELDS = [
     "instance", "size", "n", "m", "setup", "p", "tau", "R", "idx",
@@ -97,19 +115,20 @@ def known_optima(size):
         return {row["instance"]: int(row["objective"]) for row in csv.DictReader(handle) if row["optimal"] == "True"}
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--size", required=True, choices=["small", "medium"])
-    parser.add_argument("--methods", default=",".join(DEFAULT_METHODS), help="쉼표로 구분한 방법 이름")
+    parser.add_argument("--methods", default=",".join(DEFAULT_METHODS), help="쉼표로 구분한 방법 이름. tiebreak는 동점 처리 기준 실험의 12개 방법")
     parser.add_argument("--reps", type=int, default=5, help="난수를 쓰는 방법의 반복 횟수")
     parser.add_argument("--scale", type=float, default=1.0, help="시간 제한에 곱하는 속도 보정 계수 c")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) // 2))
     parser.add_argument("--shard", default="0/1", help="i/k: 인스턴스를 k개 묶음으로 나눈 것 중 i번째만 실행")
     parser.add_argument("--every", type=int, default=1, help="k번째 인스턴스마다 하나씩만 실행(예비 실험용)")
     parser.add_argument("--tag", default=platform.node() or "machine", help="결과 파일 이름과 machine 열에 쓰는 노트북 이름")
-    args = parser.parse_args()
+    parser.add_argument("--out", default=None, help="결과 파일 경로(기본값은 results/raw_<크기>_<태그>.csv)")
+    args = parser.parse_args(argv)
 
-    methods = args.methods.split(",")
+    methods = TIE_METHODS if args.methods == "tiebreak" else args.methods.split(",")
     unknown = [name for name in methods if name not in METHODS]
     if unknown:
         parser.error(f"알 수 없는 방법: {unknown}")
@@ -117,8 +136,8 @@ def main():
     paths = [path for index, path in enumerate(list_instances(args.size)[:: args.every]) if index % parts == part]
     tag = re.sub(r"[^A-Za-z0-9_-]", "_", args.tag)
 
-    RESULTS_DIR.mkdir(exist_ok=True)
-    out = RESULTS_DIR / f"raw_{args.size}_{tag}.csv"
+    out = Path(args.out) if args.out else RESULTS_DIR / f"raw_{args.size}_{tag}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
     done = {}
     if out.exists():
         with out.open(newline="") as handle:
@@ -130,7 +149,7 @@ def main():
         for path in paths
     ]
 
-    print(f"{len(tasks)}개 인스턴스, 방법 {methods}, 반복 {args.reps}회, 프로세스 {args.workers}개 -> {out.relative_to(RESULTS_DIR.parent)}")
+    print(f"{len(tasks)}개 인스턴스, 방법 {methods}, 반복 {args.reps}회, 프로세스 {args.workers}개 -> {out}")
     write_header = not out.exists()
     with out.open("a", newline="") as handle, Pool(args.workers) as pool:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)

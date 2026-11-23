@@ -11,6 +11,7 @@
 | `analyze.py` | 실행 기록을 읽어 지표를 계산하고 표와 그림을 만듭니다. | `results/summary_*.csv`, `factors_*.csv`, `instances_*.csv`, `wilcoxon.csv`, `fig_rdi.png` |
 | `convergence.py` | 인스턴스 하나에서 냉각 방식 3종의 수렴 곡선을 그립니다. | `results/convergence_<인스턴스>.png` |
 | `compare_paper.py` | H5, CSA_f, CSA_t의 ARDI를 논문의 표 2(소규모), 표 3(중규모)과 요인별로 비교합니다. `--size medium`으로 중규모를 지정합니다. | 화면 출력 |
+| `analyze_tiebreak.py` | 동점 처리 기준 실험의 결과를 기준별로 비교합니다. | 화면 출력 |
 
 ## 실행 순서
 
@@ -47,13 +48,14 @@ python -m experiments.convergence --instance medium/I_15_2_124_100_T04_R02_1 --e
 | 옵션 | 기본값 | 의미 |
 |---|---|---|
 | `--size` | 필수 | `small` 또는 `medium` |
-| `--methods` | 기본 6개 | 쉼표로 구분한 방법 이름. 기본값은 `h5`, `csa_f`, `csa_t`, `sa_geo`, `sa_log`, `sa_exp`이고, 비교용 변형인 `csa_f_pct`, `csa_t_pct`(GRASP 목록을 5%로 읽음)와 `csa_f_rnd`, `csa_t_rnd`(수용체 편집을 무작위 이동으로 함)는 직접 지정해야 실행됩니다. |
+| `--methods` | 기본 6개 | 쉼표로 구분한 방법 이름. 기본값은 `h5`, `csa_f`, `csa_t`, `sa_geo`, `sa_log`, `sa_exp`이고, 비교용 변형인 `csa_f_pct`, `csa_t_pct`(GRASP 목록을 5%로 읽음)와 `csa_f_rnd`, `csa_t_rnd`(수용체 편집을 무작위 이동으로 함)는 직접 지정해야 실행됩니다. `tiebreak`라고 쓰면 동점 처리 기준 실험의 12개 방법을 실행합니다. |
 | `--reps` | 5 | 난수를 쓰는 방법의 반복 횟수 |
 | `--scale` | 1.0 | 시간 제한 n·m·30/2 밀리초에 곱하는 속도 보정 계수 c |
 | `--workers` | 논리 코어 수의 절반 | 동시에 실행하는 프로세스 수 |
 | `--shard` | `0/1` | `i/k` 형식이며, 인스턴스를 k개 묶음으로 나눈 것 중 i번째만 실행합니다. |
 | `--every` | 1 | k번째 인스턴스마다 하나씩만 실행합니다. 10으로 두면 요인 조합마다 1번 인스턴스만 실행합니다. |
 | `--tag` | 컴퓨터 이름 | 결과 파일 이름과 `machine` 열에 기록하는 이름 |
+| `--out` | `results/raw_<크기>_<태그>.csv` | 결과 파일의 경로 |
 
 ## 여러 노트북에 나누어 실행하는 방법
 
@@ -72,6 +74,24 @@ python -m experiments.run --size medium --shard 2/3 --tag c
 ```
 
 실행이 끝나면 각자의 `results/raw_medium_*.csv` 파일을 한 사람의 `results` 폴더에 모은 뒤 `analyze.py`를 실행합니다. 실행을 중단한 뒤 같은 명령을 다시 실행하면, 이미 기록된 (인스턴스, 방법, 반복)은 건너뜁니다.
+
+## 동점 처리 기준 실험
+
+논문이 정하지 않은 동점을 어떻게 처리하느냐에 따라 결과가 얼마나 달라지는지 확인하는 실험입니다. H5, CSA_f, CSA_t를 기준 네 가지(`first`, `last`, `csum`, `random`)로 실행합니다. 기준의 뜻은 `src/tiebreak.py`에 있습니다.
+
+```bash
+python -m experiments.run --size small --methods tiebreak --reps 3 --workers 4 --tag tiebreak --out results/tiebreak/raw_small.csv
+```
+
+```bash
+python -m experiments.analyze_tiebreak --size small
+```
+
+- 방법 이름은 `h5_last`, `csa_f_csum`, `csa_t_random`처럼 방법 뒤에 기준을 붙입니다. 기준이 붙지 않은 `h5`, `csa_f`, `csa_t`가 기준 `first`입니다.
+- 기준 `random`에서는 H5의 결과도 실행마다 달라지므로 H5도 반복 실행합니다.
+- 한 인스턴스의 네 기준은 같은 프로세스에서 이어서 실행되므로, 기준 사이에 컴퓨터의 속도 조건이 같습니다.
+- 결과 파일을 `results/tiebreak`에 두는 이유는 `analyze.py`가 `results`의 `raw_*.csv`를 모두 읽기 때문입니다. 기준별 실행이 본 실험의 집계에 섞이지 않도록 `--out`으로 폴더를 나눕니다.
+- `analyze_tiebreak.py`는 기준별 지표(최적값 도달 비율, 평균 총 지연, RPD), 기준 `first`와의 인스턴스별 비교, 요인별 도달 비율, H5 구성 단계에서 기준에 따라 선택이 달라지는 삽입 결정의 비율을 출력합니다.
 
 ## 지표의 정의
 

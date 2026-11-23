@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+from . import tiebreak
 from .budget import Result
 from .h5 import h5
 from .insertion import best_insert, profile
@@ -44,9 +45,16 @@ def grasp(inst, rng, percent=False):
     best = [{i: best_insert(inst, i, [], empty, j) for i in inst.elig[j]} for j in range(inst.n)]
     rest = list(range(inst.n))
     while rest:
-        # 제한 목록은 삽입 후 총 지연이 작은 순서이며, 동점은 논문이 정하지 않았으므로 작업 번호 순으로 둔다
-        options = sorted((d, j, i, pos) for j in rest for d, i, pos in [min((best[j][i][0], i, best[j][i][2]) for i in inst.elig[j])])
-        _, j, i, pos = rng.choice(options[: rcl_size(len(rest), percent)])
+        # 제한 목록은 삽입 후 총 지연이 작은 순서이며, 동점은 논문이 정하지 않았으므로 작업 번호 순으로 둔다(기준 first).
+        # 후보는 (지연 증가량, 동점 비교값..., 작업, 기계, 위치)이다
+        options = []
+        for j in rest:
+            d, c, *_, i, pos = min(
+                (best[j][i][0], tiebreak.csum(best[j][i][1]), *tiebreak.rank(i), i, best[j][i][2]) for i in inst.elig[j]
+            )
+            options.append((d, c, *tiebreak.rank(j), j, i, pos))
+        options.sort()
+        *_, j, i, pos = rng.choice(options[: rcl_size(len(rest), percent)])
         seq = sched.seqs[i]
         sched.set_machine(inst, i, seq[:pos] + [j] + seq[pos:])
         rest.remove(j)
@@ -75,13 +83,16 @@ def int_swap(inst, sched, rng=None):
     for a in range(len(seq) - 1):
         for b in range(a + 1, len(seq)):
             seq[a], seq[b] = seq[b], seq[a]
-            key = (machine_cost(inst, i, seq)[0], a, b)  # 지연이 같으면 먼저 찾은 쌍(논문에 동점 규정 없음)
-            if key[0] < sched.tard[i] and key < best:
-                best = key
+            tard, csum = machine_cost(inst, i, seq)
+            if tard < sched.tard[i] and tard <= best[0]:
+                # 지연이 같으면 먼저 찾은 쌍(논문에 동점 규정 없음, 기준 first)
+                key = (tard, tiebreak.csum(csum), *tiebreak.rank(a, b), a, b)
+                if key < best:
+                    best = key
             seq[a], seq[b] = seq[b], seq[a]
     if len(best) == 1:
         return False
-    a, b = best[1], best[2]
+    a, b = best[-2], best[-1]
     seq[a], seq[b] = seq[b], seq[a]
     sched.set_machine(inst, i, seq)
     return True
@@ -104,15 +115,13 @@ def ext_insert(inst, sched, rng):
             if not inst.ok[w][j]:
                 continue
             tard_w, csum_w, pos = best_insert(inst, w, seq_w, prof, j)
-            key = (
-                removed[a][0] + tard_w - sched.tard[i] - sched.tard[w],
-                a,
-                pos,
-            )
-            if best is None or key < best:
-                best = key
+            delta = removed[a][0] + tard_w - sched.tard[i] - sched.tard[w]
+            if best is None or delta <= best[0]:
+                key = (delta, tiebreak.csum(removed[a][1] + csum_w), *tiebreak.rank(a), a, pos)
+                if best is None or key < best:
+                    best = key
         if best is not None and best[0] < 0:
-            _, a, pos = best
+            a, pos = best[-2], best[-1]
             j = seq_i[a]
             sched.set_machine(inst, i, seq_i[:a] + seq_i[a + 1 :], removed[a])
             sched.set_machine(inst, w, seq_w[:pos] + [j] + seq_w[pos:])
@@ -141,11 +150,13 @@ def ext_swap(inst, sched, rng):
                 seq_i[a], seq_w[b] = jb, ja
                 cost_i, cost_w = machine_cost(inst, i, seq_i), machine_cost(inst, w, seq_w)
                 seq_i[a], seq_w[b] = ja, jb
-                key = (cost_i[0] + cost_w[0] - base_t, a, b)
-                if best is None or key < best:
-                    best = key
+                delta = cost_i[0] + cost_w[0] - base_t
+                if best is None or delta <= best[0]:
+                    key = (delta, tiebreak.csum(cost_i[1] + cost_w[1]), *tiebreak.rank(a, b), a, b)
+                    if best is None or key < best:
+                        best = key
         if best is not None and best[0] < 0:
-            _, a, b = best
+            a, b = best[-2], best[-1]
             seq_i[a], seq_w[b] = seq_w[b], seq_i[a]
             sched.set_machine(inst, i, seq_i)
             sched.set_machine(inst, w, seq_w)

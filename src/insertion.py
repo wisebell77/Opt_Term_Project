@@ -2,9 +2,12 @@
 
 동점 처리(논문 5.2절): 기계의 지연이 삽입 전에도 0이고 삽입 후에도 0이면 Σ(C_j - d_j)가 최소인 위치
 (= 완료시간 합이 최소인 위치)를 고른다. 그 밖의 동점은 논문이 정하지 않았으므로 위치가 앞선 쪽,
-기계 사이의 동점은 기계 번호가 작은 쪽을 고른다.
+기계 사이의 동점은 기계 번호가 작은 쪽을 고른다. 논문이 정하지 않은 동점은 tiebreak 모듈의 기준으로
+바꿀 수 있으며, 위의 설명은 기본 기준(first)의 동작이다.
 """
 from __future__ import annotations
+
+from . import tiebreak
 
 
 def profile(inst, i, seq):
@@ -30,7 +33,11 @@ def best_insert(inst, i, seq, prof, j):
     size = len(seq)
     total_c = pref_c[size]
     base_t = pref_t[size]  # 삽입 전 기계의 지연 합
-    best_t = best_c = best_pos = -1
+    # 동점 처리 기준. 이 함수는 가장 자주 호출되므로 tiebreak.rank를 부르지 않고 같은 규칙을 직접 계산한다
+    by_csum = tiebreak.mode == "csum"
+    sign = -1 if tiebreak.mode == "last" else 1
+    draw = tiebreak.rng.random if tiebreak.mode == "random" else None
+    best_t = best_c = best_pos = best_k = best_r = -1
     for pos in range(size + 1):
         cj = comp[pos - 1] + s[seq[pos - 1]][j] + pj if pos else pj
         t = pref_t[pos] + (cj - dj if cj > dj else 0)
@@ -48,8 +55,11 @@ def best_insert(inst, i, seq, prof, j):
                     t += late
             if best_pos >= 0 and t > best_t:
                 continue
-        if best_pos < 0 or t < best_t or (t == best_t == base_t == 0 and c < best_c):
-            best_t, best_c, best_pos = t, c, pos
+        # 지연이 같은 위치 사이의 비교: 논문의 규칙이 적용되는 경우(와 기준 csum)에는 완료시간 합 k, 이어서 기준의 순서 r
+        k = c if by_csum or t == base_t == 0 else 0
+        r = draw() if draw else sign * pos
+        if best_pos < 0 or t < best_t or k < best_k or (k == best_k and r < best_r):
+            best_t, best_c, best_pos, best_k, best_r = t, c, pos, k, r
     return best_t, best_c, best_pos
 
 
@@ -63,10 +73,10 @@ def best_position_total(inst, sched, j):
     best = None
     for i in inst.elig[j]:
         tard, csum, pos = best_position(inst, i, sched.seqs[i], j)
-        key = (tard - sched.tard[i], i, pos)
+        key = (tard - sched.tard[i], tiebreak.csum(csum - sched.csum[i]), *tiebreak.rank(i), i, pos)
         if best is None or key < best:
             best = key
-    return best[1], best[2]
+    return best[-2], best[-1]
 
 
 def insert(inst, sched, i, pos, j):

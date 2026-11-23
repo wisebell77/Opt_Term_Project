@@ -19,6 +19,7 @@
 | `instance.py` | 인스턴스 자료 구조(`Instance`), 벤치마크 파일 파서(`load_instance`, `list_instances`, `parse_name`), 폴더 경로(`DATA_DIR`, `RESULTS_DIR`) |
 | `schedule.py` | 해 표현(`Schedule`), 기계별 비용 계산(`machine_cost`, `job_tardiness`), 유효성 검사(`validate`) |
 | `insertion.py` | 삽입 연산 `best_position`(BestPosition)과 `best_position_total`(BestPosition_Total) |
+| `tiebreak.py` | 동점 처리 기준(`first`, `last`, `csum`, `random`)과 기준을 바꾸는 `policy` |
 | `h5.py` | 건설적 휴리스틱 H5: 구성(`construct`), 보정(`repair`), 개선(`improve`) |
 | `csa.py` | 클론 선택 알고리즘 `csa_f`, `csa_t`와 그 구성 요소(GRASP, 이웃 연산자, VND, 적합도, 재선택) |
 | `sa.py` | 개선 방법 `sa_t`와 냉각 방식 3종(`geo`, `log`, `exp`), 온도 설정 |
@@ -32,6 +33,7 @@ instance  →  schedule  →  insertion  →  h5  →  csa
                                          └──→  sa
 budget  →  csa, sa
 schedule  →  milp
+tiebreak  →  insertion, csa
 ```
 
 화살표의 오른쪽 모듈이 왼쪽 모듈을 불러옵니다. `milp.py`만 `gurobipy`를 사용하고, 나머지 모듈은 Python 표준 라이브러리만 사용합니다.
@@ -43,6 +45,7 @@ schedule  →  milp
 - 각 기계의 첫 작업에는 준비시간이 없습니다.
 - 탐색 알고리즘은 모두 `algorithm(inst, rng, budget)` 형태로 호출하고 `Result`를 돌려줍니다. `rng`는 `random.Random(seed)` 객체이며, 전역 난수 함수는 사용하지 않습니다.
 - 동점 처리 규칙은 다음과 같습니다(`paper-faithful`). BestPosition에서 삽입 전후 기계의 지연이 모두 0이면 완료시간 합이 작은 위치를 고르고(논문 5.2절), 그 밖의 동점은 앞선 위치를 고릅니다. 기계 사이의 동점은 기계 번호가 작은 쪽을 고릅니다. VND의 이웃 연산자도 지연이 같으면 먼저 찾은 이동을 고릅니다(논문에 규정 없음).
+- 논문이 정하지 않은 동점은 `tiebreak.py`의 기준으로 바꿀 수 있습니다. 위의 규칙은 기본 기준인 `first`의 동작입니다. `with tiebreak.policy("last"):`처럼 구간을 정하면 그 안에서 실행되는 H5와 CSA가 다른 기준을 씁니다. `last`는 번호와 위치가 큰 쪽, `csum`은 완료시간 합이 작은 쪽(`main` 브랜치의 규칙), `random`은 동점인 후보 가운데 무작위로 고릅니다. 기준이 적용되는 지점은 BestPosition, BestPosition_Total, GRASP(작업을 넣을 기계와 제한 목록의 순서), 내부 교환, 외부 삽입, 외부 교환입니다. 논문이 정한 규칙(삽입 전후 지연이 0이면 완료시간 합)은 모든 기준에서 유지됩니다. H5의 작업 순서(납기가 같은 작업), 지연이 가장 큰 작업과 기계의 선택, 재선택의 동점은 기준의 대상이 아니며 항상 번호가 작은 쪽을 고릅니다.
 
 ## CSA 세부 규칙의 근거
 
