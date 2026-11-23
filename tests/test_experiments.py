@@ -17,7 +17,7 @@ def test_seed_is_reproducible_and_distinct_per_repetition():
 def test_run_instance_produces_one_row_per_method_and_repetition():
     path = DATA_DIR / (HARD[0] + ".txt")
     rows = run_instance((str(path), DEFAULT_METHODS, 2, 0.2, "test", set(), None))
-    assert len(rows) == 1 + 5 * 2  # H5는 한 번, 나머지 다섯 방법은 2회씩
+    assert len(rows) == 6 * 2  # 기준 random에서는 H5도 실행마다 달라지므로 여섯 방법 모두 2회씩
     by_method = {}
     for row in rows:
         by_method.setdefault(row["method"], []).append(row)
@@ -33,7 +33,7 @@ def test_run_instance_skips_finished_work():
     path = DATA_DIR / (HARD[0] + ".txt")
     done = {("I_6_2_49_50_T04_R02_1", "h5", 0), ("I_6_2_49_50_T04_R02_1", "csa_f", 0)}
     rows = run_instance((str(path), ["h5", "csa_f"], 2, 0.2, "test", done, None))
-    assert [(row["method"], row["rep"]) for row in rows] == [("csa_f", 1)]
+    assert [(row["method"], row["rep"]) for row in rows] == [("h5", 1), ("csa_f", 1)]
 
 
 def test_run_instance_rejects_results_below_the_known_optimum():
@@ -83,9 +83,10 @@ def test_analyze_size_works_when_no_milp_result_exists(tmp_path, monkeypatch):
     factors = {"size": "medium", "n": 15, "m": 2, "setup": 49, "p": 50, "tau": 0.4, "R": 0.2, "idx": 1, "elapsed": 0.1}
     rows = [("A", "csa_t", 0, 30), ("A", "sa_geo", 0, 20), ("B", "csa_t", 0, 0), ("B", "sa_geo", 0, 0)]
     runs = pd.DataFrame([{"instance": i, "method": m, "rep": r, "objective": o, **factors} for i, m, r, o in rows])
-    summary, test = analyze.analyze_size(runs, "medium", ["csa_t", "sa_geo"])
+    summary, tests = analyze.analyze_size(runs, "medium", [["csa_t", "sa_geo"], ["csa_t", "sa_log"]])
     assert summary.set_index("method").loc["csa_t", "rpd_mean"] == pytest.approx(50.0)
-    assert (test["first_better"], test["ties"], test["second_better"]) == (0, 1, 1)
+    assert len(tests) == 1  # 실행 기록에 없는 방법이 들어 있는 짝은 건너뛴다
+    assert (tests[0]["first_better"], tests[0]["ties"], tests[0]["second_better"]) == (0, 1, 1)
     assert (tmp_path / "summary_medium.csv").exists()
 
 

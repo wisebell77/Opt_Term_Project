@@ -31,16 +31,23 @@ def test_geometric_and_log_cooling_run_from_t0_to_tf():
     assert temperatures(50.0, 2.0, 100, "geo", n=40)[50] == pytest.approx(10.0)  # 기하 평균
 
 
-def test_exponential_cooling_is_capped_by_alpha_max():
-    temps = temperatures(50.0, 2.0, 100, "exp", n=40)
+def test_exponential_cooling_runs_from_t0_to_tf():
+    for n in (6, 40):
+        temps = temperatures(50.0, 2.0, 100, "exp", n=n)
+        assert temps[0] == pytest.approx(50.0) and temps[-1] == pytest.approx(2.0)
+        assert all(a > b for a, b in zip(temps, temps[1:]))
+    # 작업 수가 많을수록 k^(1/n)이 느리게 늘어나므로, 첫 단계에서 더 많이 식는다
+    assert temperatures(50.0, 2.0, 100, "exp", n=40)[1] < temperatures(50.0, 2.0, 100, "exp", n=6)[1]
+
+
+def test_capped_exponential_cooling_stops_above_tf():
+    # 계획서의 처음 설계: 냉각 계수를 0.9로 제한한다. ln(25) / 100^(1/40) > 0.9 이므로 종료 온도가 Tf보다 높게 남는다
+    temps = temperatures(50.0, 2.0, 100, "exp_cap", n=40)
     assert temps[0] == pytest.approx(50.0)
-    # ln(25) / 100^(1/40) > 0.9 이므로 상한이 적용되어 종료 온도가 Tf보다 높게 남는다
     assert temps[-1] == pytest.approx(50.0 * math.exp(-0.9 * 100 ** (1 / 40)))
     assert temps[-1] > 2.0
-
-
-def test_exponential_cooling_reaches_tf_when_the_cap_is_not_binding():
-    assert temperatures(50.0, 45.0, 100, "exp", n=40)[-1] == pytest.approx(45.0)
+    # 상한에 걸리지 않으면 Tf에 도달한다
+    assert temperatures(50.0, 45.0, 100, "exp_cap", n=40)[-1] == pytest.approx(45.0)
 
 
 def test_unknown_cooling_name_is_rejected():
@@ -87,7 +94,7 @@ def test_all_three_move_kinds_are_generated():
 
 def test_sa_returns_a_valid_schedule_no_worse_than_h5():
     for inst in hard_instances():
-        for cooling in ("geo", "log", "exp"):
+        for cooling in ("geo", "log", "exp", "exp_cap", "none"):
             result = sa_t(inst, random.Random(3), Budget(max_iters=3000), cooling)
             assert validate(inst, result.schedule) == [], inst.name
             assert result.objective == result.schedule.total <= h5(inst).total
@@ -96,6 +103,15 @@ def test_sa_returns_a_valid_schedule_no_worse_than_h5():
 def test_sa_improves_a_poor_starting_solution():
     inst = hard_instance(4)  # H5의 총 지연은 139이고, CSA는 15까지 줄인다
     assert sa_t(inst, random.Random(4), Budget(max_iters=30000)).objective < 139
+
+
+def test_descent_mode_never_accepts_a_worsening_move():
+    # cooling="none"은 진단용이다: 같은 이웃을 쓰되 나빠지는 이동을 받아들이지 않으므로, 현재 해가 곧 최선해이다
+    inst = hard_instance(4)
+    descent = sa_t(inst, random.Random(4), Budget(max_iters=3000), "none")
+    assert descent.info["current"] == descent.objective < 139
+    annealed = sa_t(inst, random.Random(4), Budget(max_iters=300), "geo")
+    assert annealed.info["current"] > annealed.objective  # 온도가 높을 때에는 현재 해가 최선해보다 나빠져 있다
 
 
 def test_same_seed_gives_the_same_result_in_iteration_mode():

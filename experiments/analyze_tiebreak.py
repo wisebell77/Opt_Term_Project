@@ -1,12 +1,11 @@
 """동점 처리 기준 실험의 집계: 기준(first, last, csum, random)별로 H5, CSA_f, CSA_t의 지표를 비교한다.
-같은 파일에 SA_t(기준 random)의 실행 기록이 있으면, 냉각 방식 3종과 CSA_t의 비교도 함께 출력한다.
+방법 사이의 비교(H5, CSA, SA_t)는 experiments/analyze.py가 맡는다.
 
 사용 예 (codes 폴더에서 실행):
     python -m experiments.run --size small --methods tiebreak --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
-    python -m experiments.run --size small --methods sa_geo_random,sa_log_random,sa_exp_random --reps 3 --workers 4 --out results/tiebreak/raw_small.csv
     python -m experiments.analyze_tiebreak --size small
-    python -m experiments.analyze_tiebreak --size medium --raw results/tiebreak/raw_medium.csv results/raw_medium_full.csv
 
+방법 이름은 h5_first, csa_t_random처럼 기준을 붙여 적으며, 기준이 없는 이름은 팀의 기준(tiebreak.BASELINE)으로 읽는다.
 기준의 뜻은 src/tiebreak.py에 있다. 기준값은 MILP 결과(results/milp_<크기>.csv)가 있으면 최적값이고,
 없으면 모든 기준의 모든 실행 가운데 최선값이다.
 """
@@ -24,17 +23,16 @@ from src.insertion import best_position_total, insert
 from src.instance import RESULTS_DIR, list_instances, load_instance, parse_name
 from src.schedule import Schedule
 
-BASES = ("h5", "csa_f", "csa_t", "sa_geo", "sa_log", "sa_exp")
-SA = ("sa_geo", "sa_log", "sa_exp")
+BASES = ("h5", "csa_f", "csa_t")
 FACTORS = ("tau", "n", "m")
 
 
 def split(method):
-    """방법 이름을 (방법, 기준)으로 나눈다. 이름에 기준이 없으면 first이고, 집계의 대상이 아니면 None이다."""
+    """방법 이름을 (방법, 기준)으로 나눈다. 이름에 기준이 없으면 팀의 기준이고, 이 실험의 대상이 아니면 None이다."""
     if method in BASES:
-        return method, "first"
+        return method, tiebreak.BASELINE
     base, _, mode = method.rpartition("_")
-    return (base, mode) if base in BASES and mode in tiebreak.MODES[1:] else None
+    return (base, mode) if base in BASES and mode in tiebreak.MODES else None
 
 
 def load(raw_path, milp_path=None):
@@ -70,7 +68,7 @@ def summarize(data):
 
     hit: 기준값에 도달한 실행의 비율(%), mean: 인스턴스별 평균 총 지연의 평균, rpd: 기준값이 양수인 인스턴스의 평균 RPD(%),
     missed: 평균이 기준값보다 큰 인스턴스의 수, unstable: 반복 사이에 값이 달라진 인스턴스의 수,
-    gens: 기준값이 양수인 인스턴스에서의 평균 반복 횟수(CSA는 세대 수, SA는 이웃 해 평가 횟수)."""
+    gens: 기준값이 양수인 인스턴스에서의 평균 반복 횟수(CSA의 세대 수)."""
     out = {}
     for key in sorted({key for entry in data.values() for key in entry["runs"]}):
         hits = total = missed = unstable = 0
@@ -160,7 +158,7 @@ def main():
     print(f"인스턴스 {len(data)}개, {reference}이 양수인 인스턴스 {positive}개")
 
     print(f"\n[1] 기준별 지표 ({reference} 기준)")
-    print(f"{'방법':6s} {'기준':7s} | 도달(%)  평균 지연  RPD(%)  놓친 인스턴스  반복 간 차이  평균 반복 수")
+    print(f"{'방법':6s} {'기준':7s} | 도달(%)  평균 지연  RPD(%)  놓친 인스턴스  반복 간 차이  평균 세대 수")
     for base in BASES:
         for mode in tiebreak.MODES:
             row = summary.get((mode, base))
@@ -200,13 +198,6 @@ def main():
         print(f"{group:8s} | 결정 {decisions:6d}개, first와 last가 다른 결정 {100 * differ_last / decisions:5.1f}%, "
               f"first와 csum이 다른 결정 {100 * differ_csum / decisions:5.1f}%")
 
-    if any(("random", base) in summary for base in SA):
-        print("\n[5] 기준 random에서의 방법 비교 (오른쪽 방법이 더 좋음 / 같음 / 더 나쁨, 괄호는 부호 검정의 p값)")
-        pairs = [("csa_t", base) for base in SA] + [("sa_geo", "sa_log"), ("sa_geo", "sa_exp"), ("sa_log", "sa_exp")]
-        for first, second in pairs:
-            if ("random", first) in summary and ("random", second) in summary:
-                better, same, worse = compare(data, ("random", first), ("random", second))
-                print(f"{first:6s} 대 {second:6s} | {better}/{same}/{worse} (p={sign_test(better, worse):.3g})")
 
 
 if __name__ == "__main__":

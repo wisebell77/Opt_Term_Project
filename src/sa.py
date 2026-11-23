@@ -1,6 +1,10 @@
 """개선 방법 SA_t: H5의 해에서 출발하는 시뮬레이티드 어닐링.
 
-냉각 방식은 "geo"(기하, 대표 설정), "log"(로그), "exp"(지수) 중 하나를 고른다.
+냉각 방식은 "geo"(기하, 대표 설정), "log"(로그), "exp"(지수) 중 하나를 고른다. 세 방식 모두 초기 온도 T0에서
+시작하여 마지막 단계에서 목표 종료 온도 Tf에 도달한다.
+비교와 진단을 위한 방식이 두 가지 더 있다. "exp_cap"은 계획서의 처음 설계대로 지수 냉각의 계수를
+ALPHA_MAX로 제한한 것이며, 이 경우 종료 온도가 Tf보다 높게 남는다. "none"은 온도를 두지 않고
+나빠지는 이동을 받아들이지 않는 하강이다.
 """
 from __future__ import annotations
 
@@ -11,7 +15,7 @@ from .h5 import h5
 from .schedule import machine_cost
 
 K_STEPS = 100  # 냉각 단계 수 K
-ALPHA_MAX = 0.9  # 지수 냉각 계수의 상한
+ALPHA_MAX = 0.9  # "exp_cap"에서 쓰는 지수 냉각 계수의 상한(계획서의 기본값)
 ACCEPT_START = 0.80  # 초기 온도에서의 목표 평균 수락 확률
 ACCEPT_END = 0.01  # 목표 종료 온도에서의 목표 평균 수락 확률
 SAMPLE_SIZE = 100  # 온도 설정에 사용하는 양의 증가량 표본 수 q
@@ -27,8 +31,11 @@ def temperatures(t0, tf, steps, cooling, n, alpha_max=ALPHA_MAX):
     if cooling == "log":
         b = (t0 / tf - 1) / math.log(1 + steps)
         return [t0 / (1 + b * math.log(1 + k)) for k in ks]
-    if cooling == "exp":
-        alpha = min(math.log(t0 / tf) / steps ** (1 / n), alpha_max)
+    if cooling in ("exp", "exp_cap"):
+        # T_k = T0 exp(-α k^(1/n)). α가 1보다 커도 온도는 단조롭게 내려가며, Tf에 도달하려면 대개 α > 1이 필요하다
+        alpha = math.log(t0 / tf) / steps ** (1 / n)
+        if cooling == "exp_cap":
+            alpha = min(alpha, alpha_max)
         return [t0 * math.exp(-alpha * k ** (1 / n)) for k in ks]
     raise ValueError(f"알 수 없는 냉각 방식: {cooling}")
 
@@ -119,7 +126,8 @@ def sa_t(inst, rng, budget, cooling="geo"):
                 break
     deltas = deltas or [1]
     t0, tf = fit_temperature(deltas, ACCEPT_START), fit_temperature(deltas, ACCEPT_END)
-    temps = temperatures(t0, tf, K_STEPS, cooling, inst.n)
+    # "none"은 온도 0으로 두어, 총 지연이 늘어나는 이동을 받아들이지 않는다
+    temps = [0.0] * (K_STEPS + 1) if cooling == "none" else temperatures(t0, tf, K_STEPS, cooling, inst.n)
 
     accepted = 0
     temp = temps[0]
@@ -131,7 +139,7 @@ def sa_t(inst, rng, budget, cooling="geo"):
         if move is None:
             continue
         _, changes, delta, relocations = move
-        if delta <= 0 or rng.random() < math.exp(-delta / temp):
+        if delta <= 0 or (temp > 0 and rng.random() < math.exp(-delta / temp)):
             for i, seq, cost in changes:
                 current.set_machine(inst, i, seq, cost)
             for j, i in relocations:
@@ -140,5 +148,6 @@ def sa_t(inst, rng, budget, cooling="geo"):
             if current.total < best.total:
                 best = current.copy()
                 trace.append((budget.iters, best.total))
-    info = {"cooling": cooling, "t0": t0, "tf": tf, "t_end": temp, "accepted": accepted, "trace": trace}
+    info = {"cooling": cooling, "t0": t0, "tf": tf, "t_end": temp, "accepted": accepted, "trace": trace,
+            "current": current.total}
     return Result(best, best.total, budget.elapsed(), budget.iters, info)

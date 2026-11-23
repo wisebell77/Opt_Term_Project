@@ -295,7 +295,8 @@ def reselect(pool, rng, size=MU, x=X):
 
 # ---------- 알고리즘 본체 ----------
 
-def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False):
+def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False, observe=None):
+    """observe가 있으면 세대마다 observe(기억 집합, 부모 목록, 클론 목록)를 부른다(진단용이며 탐색에는 영향이 없다)."""
     budget.start()
     cells = [Cell(h5(inst))] if use_h5 else []
     while len(cells) < MU and not (cells and (budget.done() or cells[-1].sched.total == 0)):
@@ -314,6 +315,8 @@ def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False):
                 best = clone
                 if best.total == 0:
                     break
+        if observe is not None:
+            observe(cells, parents, clones)
         for cell in cells:
             cell.prio = max(0, cell.prio - D_PRIOR)
         cells = reselect(cells + clones, rng)
@@ -322,11 +325,11 @@ def csa(inst, rng, budget, use_h5, rcl_percent=False, receptor_random=False):
     return Result(best.copy(), best.total, budget.elapsed(), budget.iters, {"trace": trace})
 
 
-def csa_f(inst, rng, budget, rcl_percent=False, receptor_random=False):
+def csa_f(inst, rng, budget, rcl_percent=False, receptor_random=False, observe=None):
     """초기 기억 집합을 GRASP만으로 생성한다."""
-    return csa(inst, rng, budget, False, rcl_percent, receptor_random)
+    return csa(inst, rng, budget, False, rcl_percent, receptor_random, observe)
 
 
-def csa_t(inst, rng, budget, rcl_percent=False, receptor_random=False):
+def csa_t(inst, rng, budget, rcl_percent=False, receptor_random=False, observe=None):
     """초기 기억 집합에 H5의 해를 포함한다."""
-    return csa(inst, rng, budget, True, rcl_percent, receptor_random)
+    return csa(inst, rng, budget, True, rcl_percent, receptor_random, observe)

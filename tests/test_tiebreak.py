@@ -461,29 +461,34 @@ def test_csa_returns_valid_schedules_under_every_policy(mode):
 
 # ---- 실행기 ----
 
+def test_the_team_baseline_is_the_random_policy():
+    assert tiebreak.BASELINE == "random"
+    assert tiebreak.mode == "first"  # 알고리즘 함수를 직접 부르면 결정적인 first이고, 기준은 policy로 정한다
+
+
 def test_the_runner_registers_h5_and_csa_under_every_policy():
     for base in ("h5", "csa_f", "csa_t"):
-        for mode in ("last", "csum", "random"):
+        for mode in ("first", "last", "csum", "random"):
             assert f"{base}_{mode}" in METHODS
     # 무작위 기준에서는 H5의 결과도 실행마다 달라지므로 반복 실행한다
-    assert METHODS["h5_last"][1] is False and METHODS["h5_csum"][1] is False and METHODS["h5_random"][1] is True
+    assert [METHODS[f"h5_{mode}"][1] for mode in ("first", "last", "csum", "random")] == [False, False, False, True]
     assert len(run.TIE_METHODS) == 12 and set(run.TIE_METHODS) <= set(METHODS)
+    assert all(name.rpartition("_")[2] in tiebreak.MODES for name in run.TIE_METHODS)  # 기준을 이름에 모두 적는다
 
 
-def test_the_runner_registers_sa_under_the_random_policy():
-    for name in ("sa_geo_random", "sa_log_random", "sa_exp_random"):
-        assert METHODS[name][1] is True
-    assert not any(name.startswith("sa_") for name in run.TIE_METHODS)  # --methods tiebreak의 대상은 H5와 CSA뿐이다
-
-
-def test_sa_under_the_random_policy_starts_from_the_h5_solution_of_that_policy():
-    # SA_t에는 자체 동점 결정이 없고, 기준은 출발해인 H5에만 영향을 준다
+def test_methods_without_a_policy_in_their_name_run_under_the_team_baseline():
+    # 이름에 기준이 없는 방법(h5, csa_t, sa_geo 등)은 기준 random으로 실행하므로 H5도 반복 실행한다
+    for name in ("h5", "csa_f", "csa_t", "csa_f_rnd", "csa_t_rnd", "sa_geo", "sa_log", "sa_exp", "sa_exp_cap"):
+        assert METHODS[name][1] is True, name
     inst = load_instance(DATA_DIR / "small" / "I_6_4_49_50_T04_R02_7.txt")
     rng = random.Random(1)
     with tiebreak.policy("random", rng):
         start = h5(inst).total
     assert (h5(inst).total, start) == (19, 34)  # 이 시드에서는 기준 random의 H5가 기준 first의 H5와 다르다
-    result = METHODS["sa_geo_random"][0](inst, random.Random(1), Budget(max_iters=50))
+    assert METHODS["h5"][0](inst, random.Random(1), Budget(max_iters=1)).objective == start
+    assert METHODS["h5_first"][0](inst, random.Random(1), Budget(max_iters=1)).objective == 19
+    # SA_t에는 자체 동점 결정이 없고, 기준은 출발해인 H5에만 영향을 준다
+    result = METHODS["sa_geo"][0](inst, random.Random(1), Budget(max_iters=50))
     assert result.info["trace"][0] == (0, start)
     assert validate(inst, result.schedule) == [] and result.objective <= start
     assert tiebreak.mode == "first"
@@ -492,15 +497,15 @@ def test_sa_under_the_random_policy_starts_from_the_h5_solution_of_that_policy()
 def test_the_runner_applies_the_policy_and_restores_the_default():
     path = DATA_DIR / (HARD[3] + ".txt")
     inst = load_instance(path)
-    rows = run_instance((str(path), ["h5", "h5_last", "h5_csum", "h5_random"], 2, 0.2, "test", set(), None))
+    rows = run_instance((str(path), ["h5_first", "h5_last", "h5_csum", "h5_random"], 2, 0.2, "test", set(), None))
     assert [(row["method"], row["rep"]) for row in rows] == [
-        ("h5", 0), ("h5_last", 0), ("h5_csum", 0), ("h5_random", 0), ("h5_random", 1),
+        ("h5_first", 0), ("h5_last", 0), ("h5_csum", 0), ("h5_random", 0), ("h5_random", 1),
     ]
     by_method = {row["method"]: row["objective"] for row in rows}
     for mode in ("first", "last", "csum"):
         with tiebreak.policy(mode):
             expected = h5(inst).total
-        assert by_method["h5" if mode == "first" else f"h5_{mode}"] == expected
+        assert by_method[f"h5_{mode}"] == expected
     assert tiebreak.mode == "first"
 
 
@@ -517,21 +522,20 @@ def test_the_runner_writes_to_the_requested_file(tmp_path):
 # ---- 집계 ----
 
 def test_method_names_are_split_into_method_and_policy():
-    assert analyze_tiebreak.split("h5") == ("h5", "first")
+    assert analyze_tiebreak.split("h5_first") == ("h5", "first")
     assert analyze_tiebreak.split("csa_f_last") == ("csa_f", "last")
     assert analyze_tiebreak.split("csa_t_random") == ("csa_t", "random")
-    assert analyze_tiebreak.split("sa_geo") == ("sa_geo", "first")
-    assert analyze_tiebreak.split("sa_exp_random") == ("sa_exp", "random")
-    assert analyze_tiebreak.split("csa_f_pct") is None  # 집계의 대상이 아닌 방법
+    assert analyze_tiebreak.split("h5") == ("h5", "random")  # 이름에 기준이 없으면 팀의 기준이다
+    assert analyze_tiebreak.split("sa_geo") is None and analyze_tiebreak.split("csa_f_pct") is None  # 이 실험의 대상이 아닌 방법
 
 
 def write_runs(tmp_path):
     raw, milp = tmp_path / "raw.csv", tmp_path / "milp.csv"
     rows = [
         # 인스턴스 A의 최적값은 10, B의 최적값은 0이다
-        ("A", "h5", 0, 10), ("A", "h5_last", 0, 12), ("A", "csa_t", 0, 10), ("A", "csa_t", 1, 11),
-        ("B", "h5", 0, 0), ("B", "h5_last", 0, 0), ("B", "csa_t", 0, 0), ("B", "csa_t", 1, 0),
-        ("A", "csa_f_pct", 0, 99),
+        ("A", "h5_first", 0, 10), ("A", "h5_last", 0, 12), ("A", "csa_t_first", 0, 10), ("A", "csa_t_first", 1, 11),
+        ("B", "h5_first", 0, 0), ("B", "h5_last", 0, 0), ("B", "csa_t_first", 0, 0), ("B", "csa_t_first", 1, 0),
+        ("A", "sa_geo", 0, 99),
     ]
     with raw.open("w", newline="") as handle:
         writer = csv.writer(handle)
@@ -585,9 +589,9 @@ def test_runs_are_loaded_from_several_files(tmp_path):
     with extra.open("w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["instance", "method", "rep", "objective", "elapsed", "iterations"])
-        writer.writerow(["A", "sa_geo_random", 0, 9, 0.5, 100])
+        writer.writerow(["A", "csa_t", 0, 9, 0.5, 100])
     data = analyze_tiebreak.load([raw, extra], None)
-    assert data["A"]["runs"][("random", "sa_geo")] == [9] and data["A"]["runs"][("first", "h5")] == [10]
+    assert data["A"]["runs"][("random", "csa_t")] == [9] and data["A"]["runs"][("first", "h5")] == [10]
     assert data["A"]["opt"] == 9  # MILP 결과가 없으면 기준값은 모든 파일의 모든 실행 가운데 최선값이다
 
 

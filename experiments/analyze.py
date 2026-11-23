@@ -16,6 +16,11 @@ import pandas as pd
 from src.instance import RESULTS_DIR
 
 FACTORS = ["n", "m", "setup", "p", "tau", "R"]
+# 기본으로 비교하는 짝: 수용체 편집(개선형 대 무작위), SA_t 대 CSA_t, 냉각 방식
+DEFAULT_PAIRS = [
+    "csa_f,csa_t", "csa_t,csa_t_rnd", "csa_t,sa_geo", "csa_t_rnd,sa_geo",
+    "sa_geo,sa_log", "sa_geo,sa_exp", "sa_exp,sa_exp_cap",
+]
 
 
 def instance_table(runs, ref):
@@ -84,7 +89,8 @@ def load_optima(size):
     return pd.read_csv(path)
 
 
-def analyze_size(runs, size, pair):
+def analyze_size(runs, size, pairs):
+    """pairs는 짝지어 비교할 [방법, 방법]의 목록이다. 요약 표와, 실행 기록에 두 방법이 모두 있는 짝의 비교 결과를 돌려준다."""
     runs = runs[runs["size"] == size]
     optima = load_optima(size)
     optimal = optima[optima["optimal"].astype(str) == "True"]
@@ -118,12 +124,14 @@ def analyze_size(runs, size, pair):
     source = "MILP 최적값" if len(milp_rows) else "실행한 방법들의 최선값"
     print(f"\n== {size}: 인스턴스 {table['instance'].nunique()}개, 기준값은 {source}")
     print(summary.round(3).to_string(index=False))
-    if set(pair) <= set(table["method"]):
-        result = compare(table, *pair)
-        print(f"  {pair[0]} 대 {pair[1]}: {pair[0]} 우세 {result['first_better']}, 동률 {result['ties']}, "
-              f"{pair[1]} 우세 {result['second_better']}, Wilcoxon p = {result['p_value']:.4g}")
-        return summary, result
-    return summary, None
+    tests = []
+    for pair in pairs:
+        if set(pair) <= set(table["method"]):
+            result = compare(table, *pair)
+            print(f"  {pair[0]} 대 {pair[1]}: {pair[0]} 우세 {result['first_better']}, 동률 {result['ties']}, "
+                  f"{pair[1]} 우세 {result['second_better']}, Wilcoxon p = {result['p_value']:.4g}")
+            tests.append(result)
+    return summary, tests
 
 
 def plot(summaries):
@@ -144,18 +152,17 @@ def plot(summaries):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pair", default="csa_t,sa_geo", help="짝지어 비교할 두 방법")
+    parser.add_argument("--pairs", nargs="+", default=DEFAULT_PAIRS, help="짝지어 비교할 방법들. 예: csa_t,sa_geo sa_geo,sa_log")
     args = parser.parse_args()
-    pair = args.pair.split(",")
+    pairs = [pair.split(",") for pair in args.pairs]
 
     runs = load_runs()
     summaries, tests = {}, []
     for size in ("small", "medium"):
         if (runs["size"] == size).any():
-            summary, test = analyze_size(runs, size, pair)
+            summary, results = analyze_size(runs, size, pairs)
             summaries[size] = summary
-            if test:
-                tests.append({"size": size, **test})
+            tests += [{"size": size, **result} for result in results]
     if tests:
         pd.DataFrame(tests).to_csv(RESULTS_DIR / "wilcoxon.csv", index=False)
     plot(summaries)

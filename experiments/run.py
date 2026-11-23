@@ -34,16 +34,18 @@ def run_h5(inst, rng, budget):
     return Result(sched, sched.total, budget.elapsed(), 0)
 
 
-# 방법 이름 -> (실행 함수, 난수 사용 여부). 난수를 쓰지 않는 방법은 한 번만 실행한다.
-METHODS = {
+# 알고리즘: 이름 -> (실행 함수, 알고리즘 자체의 난수 사용 여부)
+ALGORITHMS = {
     "h5": (run_h5, False),
     "csa_f": (csa_f, True),
     "csa_t": (csa_t, True),
     "sa_geo": (lambda inst, rng, budget: sa_t(inst, rng, budget, "geo"), True),
     "sa_log": (lambda inst, rng, budget: sa_t(inst, rng, budget, "log"), True),
     "sa_exp": (lambda inst, rng, budget: sa_t(inst, rng, budget, "exp"), True),
-    # 논문과 다르게 읽는 변형. 해석의 영향을 비교할 때에만 --methods로 지정한다
+    # 비교용 변형. --methods로 지정할 때에만 실행한다
+    # exp_cap: 지수 냉각의 계수를 0.9로 제한한 처음 설계(종료 온도가 목표보다 높게 남음)
     # pct: GRASP 제한 목록을 미배정 작업의 5%로 읽음, rnd: 수용체 편집을 수락 검사 없는 무작위 이동으로 함
+    "sa_exp_cap": (lambda inst, rng, budget: sa_t(inst, rng, budget, "exp_cap"), True),
     "csa_f_pct": (lambda inst, rng, budget: csa_f(inst, rng, budget, rcl_percent=True), True),
     "csa_t_pct": (lambda inst, rng, budget: csa_t(inst, rng, budget, rcl_percent=True), True),
     "csa_f_rnd": (lambda inst, rng, budget: csa_f(inst, rng, budget, receptor_random=True), True),
@@ -60,16 +62,19 @@ def with_tie(mode, algorithm):
     return run
 
 
-# 동점 처리 기준 실험용 변형: h5_last, csa_f_csum, csa_t_random 등. 이름에 기준이 없는 h5, csa_f, csa_t가 기준 first이다.
-# 기준 random에서는 H5의 결과도 실행마다 달라지므로 반복 실행한다
-TIE_METHODS = ["h5", "csa_f", "csa_t"]
-for _mode in tiebreak.MODES[1:]:
+# 방법 이름 -> (실행 함수, 난수 사용 여부). 난수를 쓰지 않는 방법은 한 번만 실행한다.
+# 이름에 기준이 없는 방법은 팀의 기준(tiebreak.BASELINE = random)으로 실행한다. 이 기준에서는 H5의 결과도
+# 실행마다 달라지므로 모든 방법을 반복 실행한다
+METHODS = {
+    name: (with_tie(tiebreak.BASELINE, algorithm), stochastic or tiebreak.BASELINE == "random")
+    for name, (algorithm, stochastic) in ALGORITHMS.items()
+}
+# 동점 처리 기준 실험용: h5_first, csa_f_csum, csa_t_random처럼 기준을 이름에 적은 방법
+TIE_METHODS = []
+for _mode in tiebreak.MODES:
     for _name in ("h5", "csa_f", "csa_t"):
-        METHODS[f"{_name}_{_mode}"] = (with_tie(_mode, METHODS[_name][0]), METHODS[_name][1] or _mode == "random")
+        METHODS[f"{_name}_{_mode}"] = (with_tie(_mode, ALGORITHMS[_name][0]), ALGORITHMS[_name][1] or _mode == "random")
         TIE_METHODS.append(f"{_name}_{_mode}")
-# SA_t에는 자체 동점 결정이 없으므로 기준은 출발해인 H5에만 영향을 준다. SA_t는 기준 random에서만 실행한다
-for _name in ("sa_geo", "sa_log", "sa_exp"):
-    METHODS[f"{_name}_random"] = (with_tie("random", METHODS[_name][0]), True)
 
 FIELDS = [
     "instance", "size", "n", "m", "setup", "p", "tau", "R", "idx",

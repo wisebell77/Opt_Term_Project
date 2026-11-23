@@ -4,12 +4,14 @@
     python -m experiments.convergence --instance medium/I_15_2_124_100_T04_R02_1 --evals 200000
 
 평가 횟수 기준으로 실행하므로 같은 시드에서는 어느 컴퓨터에서나 같은 결과가 나온다.
+출발해인 H5에는 팀의 동점 처리 기준(random)을 적용하며, --tie로 바꿀 수 있다.
 """
 from __future__ import annotations
 
 import argparse
 import random
 
+from src import tiebreak
 from src.budget import Budget
 from src.instance import DATA_DIR, RESULTS_DIR, load_instance
 from src.sa import sa_t
@@ -20,6 +22,7 @@ def main():
     parser.add_argument("--instance", required=True, help="data 폴더 기준 경로(확장자 제외). 예: small/I_6_2_49_50_T04_R02_1")
     parser.add_argument("--evals", type=int, default=200000, help="이웃 해 평가 횟수")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--tie", default=tiebreak.BASELINE, choices=tiebreak.MODES, help="H5 출발해에 적용할 동점 처리 기준")
     args = parser.parse_args()
 
     import matplotlib
@@ -30,7 +33,9 @@ def main():
     inst = load_instance(DATA_DIR / f"{args.instance}.txt")
     fig, axis = plt.subplots(figsize=(6, 3.6))
     for cooling, style in (("geo", "-"), ("log", "--"), ("exp", ":")):
-        result = sa_t(inst, random.Random(args.seed), Budget(max_iters=args.evals), cooling)
+        rng = random.Random(args.seed)
+        with tiebreak.policy(args.tie, rng):
+            result = sa_t(inst, rng, Budget(max_iters=args.evals), cooling)
         trace = result.info.get("trace", [(0, result.objective)]) + [(result.iterations, result.objective)]
         axis.step([e for e, _ in trace], [v for _, v in trace], style, where="post", color="black", label=cooling)
         print(f"{cooling}: 최선값 {result.objective}, 종료 온도 {result.info.get('t_end', float('nan')):.3f}, "

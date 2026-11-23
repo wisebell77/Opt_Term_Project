@@ -10,12 +10,17 @@
 
 기준이 적용되는 지점은 BestPosition, BestPosition_Total, GRASP(작업을 넣을 기계와 제한 목록의 순서),
 내부 교환, 외부 삽입, 외부 교환이다. 기준은 `with policy("last"):`처럼 구간을 정해 바꾼다.
+
+팀이 정한 기준은 BASELINE(random)이며, 실험 실행기(experiments/run.py)는 이름에 기준이 없는 방법을
+이 기준으로 실행한다. 알고리즘 함수를 직접 부를 때에는 policy로 기준을 정해야 하고, 정하지 않으면
+난수가 필요 없는 first로 동작한다.
 """
 from __future__ import annotations
 
 from contextlib import contextmanager
 
 MODES = ("first", "last", "csum", "random")
+BASELINE = "random"  # 팀이 정한 기준(소규모 실험에서 CSA의 결과가 가장 좋았다)
 
 mode = "first"  # 현재 기준
 rng = None  # 기준 random이 쓰는 난수 생성기
